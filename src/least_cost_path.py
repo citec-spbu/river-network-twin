@@ -79,7 +79,7 @@ def generate_slope_layer(dem_path: str, project_folder: str) -> str:
         'BAND': 1,
         'SCALE': 1,  # Масштаб (оставьте 1, если пиксели в метрах)
         'AS_PERCENT': False,  # False = градусы, True = проценты
-        'ZEVENBERGEN': False,  # False = стандартный алгоритм, True = более гладкий
+        'ZEVENBERGEN': True,  # False = стандартный алгоритм, True = более гладкий
         'OUTPUT': 'TEMPORARY_OUTPUT'
     }
     output_slope_utm = processing.run("gdal:slope", params_slope)['OUTPUT']
