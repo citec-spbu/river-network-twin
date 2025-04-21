@@ -31,6 +31,13 @@ RIVER_FILTERS = {
 }
 
 
+
+# ========== НАСТРОЙКА ПАРАМЕТРОВ ДЛЯ КЛАСТЕРИЗАЦИИ ==========
+RESAMPLE_SCALE = 5                # Параметр масштаба для ресемплинга (2-10)
+CONTOUR_INTERVAL = 20             # Интервал изолиний в метрах
+# ============================================================
+
+
 def transform_bbox(x_min, x_max, y_min, y_max, from_epsg, to_epsg):
     # Создаем объекты систем координат
     from_crs = QgsCoordinateReferenceSystem(f"EPSG:{from_epsg}")
@@ -273,7 +280,15 @@ def river(project_folder):
     point_layer.commitChanges(True)
     QgsProject.instance().addMapLayer(point_layer)
 
-    data_for_clustering = preparing_data_for_clustering(point_layer, dem_layer)
+    copied_point_layer = point_layer.clone()
+    data_for_clustering = preparing_data_for_clustering(copied_point_layer, dem_layer)
+    data_for_clustering.setName("Изолинии")
+    QgsProject.instance().addMapLayer(data_for_clustering)
+
+    points_and_clusters = assign_clusters(data_for_clustering, copied_point_layer)
+    points_and_clusters.setName("Points_and_clusters")
+    QgsProject.instance().addMapLayer(points_and_clusters)
+
 
 def select_analysis_bbox() -> Optional[List[float]]:
     method, ok = QInputDialog.getItem(
@@ -340,11 +355,6 @@ def select_analysis_bbox() -> Optional[List[float]]:
     return None
 
 def preparing_data_for_clustering(point_layer, dem_layer):
-    # ========== НАСТРОЙКИ ПАРАМЕТРОВ ==========
-    RESAMPLE_SCALE = 5                # Параметр масштаба для ресемплинга (2-10)(Для более гладких изолиний увеличить значение)
-    CONTOUR_INTERVAL = 20             # Интервал изолиний в метрах
-    # ==========================================
-
     # Создание ID для точек
     point_layer.startEditing()
     if "point_id" not in [f.name() for f in point_layer.fields()]:
@@ -571,5 +581,104 @@ def preparing_data_for_clustering(point_layer, dem_layer):
     
     return result_layer
 
+
             
 
+def assign_clusters(data_for_clustering, point_layer):
+    # Создаем поле cluster, если его нет
+    if point_layer.fields().indexFromName('cluster') == -1:
+        point_layer.startEditing()
+        point_layer.addAttribute(QgsField('cluster', QVariant.Int))
+        point_layer.commitChanges()
+
+    # Подготовка словаря полигонов (все ID как строки)
+    polygons = {}
+    for feat in data_for_clustering.getFeatures():
+        poly_id = str(feat["fid"])  # Приводим к строке
+        polygons[poly_id] = {
+            'feature': feat,
+            'z': feat['z'],
+            'children': [],
+            'points': []
+        }
+
+    # Заполняем дочерние полигоны и точки (ID как строки)
+    for poly_id, data in polygons.items():
+        feat = data['feature']
+        
+        # Обрабатываем ID_child
+        if feat['id_child']:
+            children = [
+                c.strip() for c in str(feat['id_child']).split(',') 
+                if c.strip() in polygons  # Только существующие ID
+            ]
+            data['children'] = children
+        
+        # Обрабатываем Arr_point
+        if feat['arr_point']:
+            data['points'] = [
+                p.strip() for p in str(feat['arr_point']).split(',')
+            ]
+
+    # Рекурсивная функция для определения кластера
+    def get_final_cluster(current_poly_id, point_geom):
+        current_poly = polygons.get(current_poly_id)
+        if not current_poly:
+            return None
+
+        children = current_poly['children']
+        
+        if not children:
+            return int(current_poly_id)  # Возвращаем число, если cluster должен быть int
+        elif len(children) == 1:
+            return get_final_cluster(children[0], point_geom)
+        else:
+            # Ищем ближайший дочерний полигон
+            min_dist = float('inf')
+            closest_child = None
+            for child_id in children:
+                child_poly = polygons.get(child_id)
+                if not child_poly:
+                    continue
+                child_geom = child_poly['feature'].geometry()
+                dist = point_geom.distance(child_geom)
+                if dist < min_dist:
+                    min_dist = dist
+                    closest_child = child_id
+            return get_final_cluster(closest_child, point_geom) if closest_child else None
+
+    # Обновляем точки
+    point_layer.startEditing()
+    # Группируем полигоны по z
+    z_groups = {}
+    for poly_id, data in polygons.items():
+        z = data['z']
+        if z not in z_groups:
+            z_groups[z] = []
+        z_groups[z].append(poly_id)
+
+    # Обрабатываем полигоны от максимального z к минимальному
+    for z in sorted(z_groups.keys(), reverse=True):
+        for poly_id in z_groups[z]:
+            points_ids = polygons[poly_id]['points']
+            for point_id in points_ids:
+                # Ищем точку (ID_point как строка)
+                point_feat = next(
+                    point_layer.getFeatures(f"point_id = '{point_id}'"), 
+                    None
+                )
+                if not point_feat:
+                    continue
+
+                # Определяем кластер
+                cluster_id = get_final_cluster(poly_id, point_feat.geometry())
+                if cluster_id is not None:
+                    point_layer.changeAttributeValue(
+                        point_feat.id(),
+                        point_layer.fields().indexFromName('cluster'),
+                        cluster_id
+                    )
+
+    point_layer.commitChanges()
+
+    return point_layer       
