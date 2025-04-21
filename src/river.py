@@ -1,6 +1,5 @@
 import os
 import processing
-import requests
 from qgis.core import (
     QgsProject,
     QgsCoordinateReferenceSystem,
@@ -14,61 +13,19 @@ from qgis.core import (
     QgsFeature,
     QgsApplication,
 )
-from qgis.analysis import QgsNativeAlgorithms
 from qgis.PyQt.QtWidgets import (
-    QDialog,
-    QVBoxLayout,
-    QLabel,
-    QDoubleSpinBox,
-    QPushButton,
     QMessageBox,
-    QAction,
     QInputDialog
 )
 from processing_saga_nextgen.saga_nextgen_plugin import SagaNextGenAlgorithmProvider
-from qgis.PyQt.QtCore import QVariant, pyqtSignal
-from qgis.PyQt.QtGui import QColor
-from qgis.gui import QgsVertexMarker, QgsMapToolEmitPoint
 from qgis.utils import iface
-from collections import deque
 from .common import *
-
-class PointSelectionTool(QgsMapToolEmitPoint):
-    selection_completed = pyqtSignal(list)
-
-    def __init__(self, canvas):
-        super().__init__(canvas)
-        self.points = []
-        self.canvas = canvas
-        self.markers = []
-
-    def canvasPressEvent(self, event):
-        point = self.toMapCoordinates(event.pos())
-        self.points.append(point)
-
-        marker = QgsVertexMarker(self.canvas)
-        marker.setCenter(point)
-        marker.setColor(QColor(255, 0, 0))
-        marker.setIconSize(10)
-        self.markers.append(marker)
-
-        if len(self.points) == 4:
-            self.selection_completed.emit(self.points)
-            self.cleanup()
-
-    def cleanup(self):
-        for marker in self.markers:
-            self.canvas.scene().removeItem(marker)
-        self.markers = []
-        self.canvas.unsetMapTool(self)
-
-
+from .point_selection_tool import *
 
 RIVER_FILTERS = {
     "strahler_order": (">=", 2),
     "length": (">", 1000),
 }
-
 
 def load_saga_algorithms():
     provider = SagaNextGenAlgorithmProvider()
@@ -98,40 +55,6 @@ def transform_bbox(x_min, x_max, y_min, y_max, from_epsg, to_epsg):
     y_coords = [p.y() for p in transformed_points]
 
     return f"{min(x_coords)}, {max(x_coords)}, {min(y_coords)}, {max(y_coords)}"
-
-def set_project_crs():
-    crs = QgsCoordinateReferenceSystem("EPSG:3857")
-    QgsProject.instance().setCrs(crs)
-
-def enable_processing_algorithms():
-    QgsApplication.processingRegistry().addProvider(QgsNativeAlgorithms())
-
-def add_opentopo_layer():
-    opentopo_url = 'type=xyz&zmin=0&zmax=21&url=https://tile.opentopomap.org/{z}/{x}/{y}.png'
-    opentopo_layer = QgsRasterLayer(opentopo_url, 'OpenTopoMap', 'wms')
-    QgsProject.instance().addMapLayer(opentopo_layer)
-
-def get_coordinates():
-    x, ok_x = QInputDialog.getDouble(None, "Координата X", "Введите координату X:", value=4316873, decimals=6)
-    if not ok_x:
-        return None, None
-
-    y, ok_y = QInputDialog.getDouble(None, "Координата Y", "Введите координату Y:", value=7711643, decimals=6)
-    if not ok_y:
-        return None, None
-
-    return x, y
-
-
-def transform_coordinates(x, y):
-    transformer = QgsCoordinateTransform(
-        QgsCoordinateReferenceSystem("EPSG:3857"),
-        QgsCoordinateReferenceSystem("EPSG:4326"),
-        QgsProject.instance()
-    )
-    point = QgsPointXY(x, y)
-    transformed_point = transformer.transform(point)
-    return transformed_point.x(), transformed_point.y()
 
 
 def river(project_folder):
