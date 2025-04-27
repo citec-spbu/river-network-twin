@@ -1,16 +1,12 @@
 from qgis.core import (
-    QgsVectorLayer,
     QgsField,
-    QgsFeature,
-    QgsGeometry,
     QgsSpatialIndex,
-    QgsProject,
 )
 import processing
 from qgis.PyQt.QtCore import QVariant
-import os
 
-def preparing_data_for_clustering(point_layer, dem_layer, RESAMPLE_SCALE, CONTOUR_INTERVAL, project_folder):
+
+def preparing_data_for_clustering(point_layer, dem_layer, RESAMPLE_SCALE, CONTOUR_INTERVAL):
     # Создание ID для точек
     point_layer.startEditing()
     if "point_id" not in [f.name() for f in point_layer.fields()]:
