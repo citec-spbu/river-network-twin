@@ -13,17 +13,20 @@ from qgis.core import (
     QgsFeature,
     QgsApplication,
 )
+from qgis.PyQt.QtCore import QVariant, QEventLoop
+from qgis.PyQt.QtWidgets import (
+    QMessageBox,
+    QInputDialog
+)
 from processing_saga_nextgen.saga_nextgen_plugin import SagaNextGenAlgorithmProvider
-from qgis.PyQt.QtCore import QVariant
 from qgis.utils import iface
 from .common import *
-
+from .point_selection_tool import PointSelectionTool
 
 RIVER_FILTERS = {
     "strahler_order": (">=", 2),
     "length": (">", 1000),
 }
-
 
 def load_saga_algorithms():
     provider = SagaNextGenAlgorithmProvider()
@@ -60,12 +63,9 @@ def river(project_folder):
     enable_processing_algorithms()
     add_opentopo_layer()
 
-    x, y = get_coordinates()
-    if x is None or y is None:
+    bbox = select_analysis_bbox()
+    if bbox is None:
         return
-
-    longitude, latitude = transform_coordinates(x, y)
-    bbox = [longitude - 0.5, latitude - 0.5, longitude + 0.5, latitude + 0.5]
 
     dem_path = download_dem(bbox, project_folder)
     dem_layer = add_dem_layer(dem_path)
@@ -460,3 +460,63 @@ def filter_rivers_by_params(rivers_layer, filters, layer_name="rivers_filtered")
         filtered = QgsVectorLayer(result_path, layer_name, "ogr")
     filtered.setName(layer_name)
     return filtered
+
+def select_analysis_bbox() -> list | None:
+    method, ok = QInputDialog.getItem(
+        None,
+        "Выбор метода",
+        "Как определить область анализа?",
+        ["Радиус вокруг точки", "Область по 4 точкам"],
+        0, False
+    )
+    if not ok:
+        return None
+
+    if method == "Радиус вокруг точки":
+        radius, ok = QInputDialog.getDouble(
+            None,
+            "Радиус вокруг точки",
+            "Введите радиус (градусы):",
+            value=0.5, min=0.1, max=5, decimals=1
+        )
+        if not ok:
+            return None
+
+        x, y = get_coordinates()
+        if x is None or y is None:
+            return None
+
+        lon, lat = transform_coordinates(x, y)
+        return [lon - radius, lat - radius, lon + radius, lat + radius]
+
+    elif method == "Область по 4 точкам":
+        canvas = iface.mapCanvas()
+        tool = PointSelectionTool(canvas)
+        canvas.setMapTool(tool)
+
+        QMessageBox.information(
+            None,
+            "Выбор территории",
+            "Выберите 4 точки на карте, затем дождитесь завершения."
+        )
+
+        loop = QEventLoop()
+        tool.selection_completed.connect(loop.quit)
+        loop.exec_()
+
+        if len(tool.points) != 4:
+            QMessageBox.warning(None, "Ошибка", "Выбрано не 4 точки.")
+            return None
+
+        transform = QgsCoordinateTransform(
+            QgsCoordinateReferenceSystem("EPSG:3857"),
+            QgsCoordinateReferenceSystem("EPSG:4326"),
+            QgsProject.instance()
+        )
+        points_4326 = [transform.transform(p) for p in tool.points]
+
+        x_coords = [p.x() for p in points_4326]
+        y_coords = [p.y() for p in points_4326]
+        return [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
+
+    return None
