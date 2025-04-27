@@ -23,7 +23,7 @@ from ..river.layers.rivers_and_points import build_rivers_and_points_layer
 from ..river.layers.rivers_merged import build_merged_layer
 from ..river.layers.utils import load_quickosm_layer
 from ..common import *
-
+from .clustering import *
 
 RIVER_FILTERS = {
     "max_strahler_order": (">=", 2),
@@ -281,7 +281,13 @@ def river(project_folder):
     QgsProject.instance().addMapLayer(point_layer)
 
     copied_point_layer = point_layer.clone()
-    data_for_clustering = preparing_data_for_clustering(copied_point_layer, dem_layer)
+    data_for_clustering = preparing_data_for_clustering(
+        copied_point_layer, 
+        dem_layer,
+        RESAMPLE_SCALE,
+        CONTOUR_INTERVAL,
+        project_folder
+    )
     data_for_clustering.setName("Изолинии")
     QgsProject.instance().addMapLayer(data_for_clustering)
 
