@@ -13,7 +13,7 @@ from qgis.PyQt.QtWidgets import (
 )
 from qgis.utils import iface
 from .common import *
-from .river import river
+from .river.river import river
 from .least_cost_path import least_cost_path_analysis
 from .forest import forest
 
