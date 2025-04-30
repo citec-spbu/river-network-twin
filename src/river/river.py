@@ -27,8 +27,8 @@ from ..river.layers.utils import load_quickosm_layer
 from ..common import *
 
 RIVER_FILTERS = {
-    "strahler_order": (">=", 2),
-    "length": (">", 1000),
+    "max_strahler_order": (">=", 2),
+    "total_length": (">", 1000),
 }
 
 def transform_bbox(x_min, x_max, y_min, y_max, from_epsg, to_epsg):

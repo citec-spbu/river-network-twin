@@ -7,27 +7,30 @@ from .utils import compute_river_length, compute_strahler, filter_rivers_by_para
 def build_rivers_by_object_filtered(
     end_y, filters, rivers_by_object_filtered_path: str
 ) -> QgsVectorLayer:
-    rivers_merged = compute_river_length(end_y)
-    rivers_merged = compute_strahler(rivers_merged)
+    segs = compute_river_length(end_y) # поле 'length'
+    segs = compute_strahler(segs) # поле 'strahler_order'
 
-    provider = rivers_merged.dataProvider()
-    existing_fields = [f.name() for f in provider.fields()]
-
-    rivers_merged.startEditing()
-    if "group_id" not in [f.name() for f in provider.fields()]:
-        provider.addAttributes([QgsField("group_id", QVariant.Int)])
-    if "segment_id" not in existing_fields:
+    provider = segs.dataProvider()
+    if "segment_id" not in [f.name() for f in provider.fields()]:
+        segs.startEditing()
         provider.addAttributes([QgsField("segment_id", QVariant.Int)])
-        rivers_merged.updateFields()
-        idx_segment_id = rivers_merged.fields().indexOf("segment_id")
-        for f in rivers_merged.getFeatures():
-            rivers_merged.changeAttributeValue(f.id(), idx_segment_id, f.id())
-    rivers_merged.commitChanges()
+        segs.updateFields()
+        idx_seg = segs.fields().indexOf("segment_id")
+        for f in segs.getFeatures():
+            segs.changeAttributeValue(f.id(), idx_seg, f.id())
+        segs.commitChanges()
 
-    idx_gid = rivers_merged.fields().indexOf("group_id")
-    idx_segment_id = rivers_merged.fields().indexOf("segment_id")
+    segs.startEditing()
+    if "group_id" not in [f.name() for f in provider.fields()]:
+        segs.startEditing()
+        provider.addAttributes([QgsField("group_id", QVariant.Int)])
+        segs.updateFields()
+        segs.commitChanges()
 
-    feats = {f.id(): f for f in rivers_merged.getFeatures()}
+    idx_gid = segs.fields().indexOf("group_id")
+    idx_seg = segs.fields().indexOf("segment_id")
+
+    feats = {f.id(): f for f in segs.getFeatures()}
     index = QgsSpatialIndex()
     for feat in feats.values():
         index.insertFeature(feat)
@@ -35,9 +38,8 @@ def build_rivers_by_object_filtered(
     visited = set()
     current_gid = 0
 
-    rivers_merged.startEditing()
-
-    for fid, _ in feats.items():
+    segs.startEditing()
+    for fid in feats:
         if fid in visited:
             continue
         current_gid += 1
@@ -45,58 +47,71 @@ def build_rivers_by_object_filtered(
         visited.add(fid)
         while stack:
             cur = stack.pop()
-            rivers_merged.changeAttributeValue(cur, idx_gid, current_gid)
+            segs.changeAttributeValue(cur, idx_gid, current_gid)
             bbox = feats[cur].geometry().boundingBox()
-            nbrs = index.intersects(bbox)
-            for nb in nbrs:
+            for nb in index.intersects(bbox):
                 if nb in visited:
                     continue
                 if feats[cur].geometry().intersects(feats[nb].geometry()):
                     visited.add(nb)
                     stack.append(nb)
-
-    rivers_merged.commitChanges()
+    segs.commitChanges()
 
     result = processing.run(
         "native:dissolve",
         {
-            "INPUT": rivers_merged,
+            "INPUT": segs,
             "FIELD": ["group_id"],
             "OUTPUT": rivers_by_object_filtered_path,
         },
     )
-    dissolved_layer = QgsVectorLayer(result["OUTPUT"], "rivers_by_object", "ogr")
+    dissolved = QgsVectorLayer(result["OUTPUT"], "rivers_by_object", "ogr")
 
-    # Добавляем поле segments для хранения списка исходных segment_id
-    dissolved_layer.startEditing()
-    dissolved_provider = dissolved_layer.dataProvider()
-    dissolved_provider.addAttributes([QgsField("segments", QVariant.String)])
-    dissolved_layer.updateFields()
-    idx_segments = dissolved_layer.fields().indexOf("segments")
+    # Добавить поля: segments, total_length, max_order
+    dissolved.startEditing()
+    dp = dissolved.dataProvider()
+    dp.addAttributes([
+        QgsField("segments", QVariant.String),
+        QgsField("total_length", QVariant.Double),
+        QgsField("max_strahler_order", QVariant.Int),
+    ])
+    dissolved.updateFields()
 
-    group_segments = {}
+    idx_segs     = dissolved.fields().indexOf("segments")
+    idx_totlen   = dissolved.fields().indexOf("total_length")
+    idx_maxorder = dissolved.fields().indexOf("max_strahler_order")
 
-    for f in rivers_merged.getFeatures():
+    group_map = {}
+    for f in segs.getFeatures():
         gid = f["group_id"]
         sid = f["segment_id"]
-        if gid not in group_segments:
-            group_segments[gid] = []
-        group_segments[gid].append(sid)
+        group_map.setdefault(gid, []).append(sid)
 
-    for f in dissolved_layer.getFeatures():
-        gid = f["group_id"]
-        seg_list = group_segments.get(gid, [])
-        seg_list_str = ",".join(str(s) for s in seg_list)
-        dissolved_layer.changeAttributeValue(f.id(), idx_segments, seg_list_str)
+    for feat in dissolved.getFeatures():
+        gid = feat["group_id"]
+        seg_ids = group_map.get(gid, [])
+        # segments как CSV
+        seg_list_str = ",".join(str(s) for s in seg_ids)
+        dissolved.changeAttributeValue(feat.id(), idx_segs, seg_list_str)
 
-    dissolved_layer.commitChanges()
+        # total_length
+        total_len = sum(
+            segs.getFeature(s).attribute("length") or 0.0
+            for s in seg_ids
+        )
+        dissolved.changeAttributeValue(feat.id(), idx_totlen, total_len)
+
+        # max_strahler_order 
+        max_ord = max(
+            (segs.getFeature(s).attribute("strahler_order") or 0)
+            for s in seg_ids
+        )
+        dissolved.changeAttributeValue(feat.id(), idx_maxorder, max_ord)
+
+    dissolved.commitChanges()
 
     QgsVectorLayerExporter.exportLayer(
-        dissolved_layer,
-        rivers_by_object_filtered_path,
-        "GPKG",
-        dissolved_layer.crs(),
-        False,
+        dissolved, rivers_by_object_filtered_path, "GPKG", dissolved.crs(), False
     )
     final_layer = QgsVectorLayer(
         rivers_by_object_filtered_path, "rivers_by_object", "ogr"
