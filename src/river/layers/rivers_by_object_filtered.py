@@ -7,8 +7,8 @@ from .utils import compute_river_length, compute_strahler, filter_rivers_by_para
 def build_rivers_by_object_filtered(
     end_y, filters, rivers_by_object_filtered_path: str
 ) -> QgsVectorLayer:
-    segs = compute_river_length(end_y) # поле 'length'
-    segs = compute_strahler(segs) # поле 'strahler_order'
+    segs = compute_river_length(end_y)  # поле 'length'
+    segs = compute_strahler(segs)  # поле 'strahler_order'
 
     provider = segs.dataProvider()
     if "segment_id" not in [f.name() for f in provider.fields()]:
@@ -70,15 +70,17 @@ def build_rivers_by_object_filtered(
     # Добавить поля: segments, total_length, max_order
     dissolved.startEditing()
     dp = dissolved.dataProvider()
-    dp.addAttributes([
-        QgsField("segments", QVariant.String),
-        QgsField("total_length", QVariant.Double),
-        QgsField("max_strahler_order", QVariant.Int),
-    ])
+    dp.addAttributes(
+        [
+            QgsField("segments", QVariant.String),
+            QgsField("total_length", QVariant.Double),
+            QgsField("max_strahler_order", QVariant.Int),
+        ]
+    )
     dissolved.updateFields()
 
-    idx_segs     = dissolved.fields().indexOf("segments")
-    idx_totlen   = dissolved.fields().indexOf("total_length")
+    idx_segs = dissolved.fields().indexOf("segments")
+    idx_totlen = dissolved.fields().indexOf("total_length")
     idx_maxorder = dissolved.fields().indexOf("max_strahler_order")
 
     group_map = {}
@@ -95,16 +97,12 @@ def build_rivers_by_object_filtered(
         dissolved.changeAttributeValue(feat.id(), idx_segs, seg_list_str)
 
         # total_length
-        total_len = sum(
-            segs.getFeature(s).attribute("length") or 0.0
-            for s in seg_ids
-        )
+        total_len = sum(segs.getFeature(s).attribute("length") or 0.0 for s in seg_ids)
         dissolved.changeAttributeValue(feat.id(), idx_totlen, total_len)
 
-        # max_strahler_order 
+        # max_strahler_order
         max_ord = max(
-            (segs.getFeature(s).attribute("strahler_order") or 0)
-            for s in seg_ids
+            (segs.getFeature(s).attribute("strahler_order") or 0) for s in seg_ids
         )
         dissolved.changeAttributeValue(feat.id(), idx_maxorder, max_ord)
 

@@ -13,10 +13,7 @@ from qgis.core import (
     QgsFeature,
 )
 from qgis.PyQt.QtCore import QVariant, QEventLoop
-from qgis.PyQt.QtWidgets import (
-    QMessageBox,
-    QInputDialog
-)
+from qgis.PyQt.QtWidgets import QMessageBox, QInputDialog
 from qgis.utils import iface
 from .point_selection_tool import PointSelectionTool
 from .layers.rivers_by_object_filtered import build_rivers_by_object_filtered
@@ -30,6 +27,7 @@ RIVER_FILTERS = {
     "max_strahler_order": (">=", 2),
     "total_length": (">", 1000),
 }
+
 
 def transform_bbox(x_min, x_max, y_min, y_max, from_epsg, to_epsg):
     # Создаем объекты систем координат
@@ -280,7 +278,8 @@ def select_analysis_bbox() -> Optional[List[float]]:
         "Выбор метода",
         "Как определить область анализа?",
         ["Радиус вокруг точки", "Область по 4 точкам"],
-        0, False
+        0,
+        False,
     )
     if not ok:
         return None
@@ -310,7 +309,7 @@ def select_analysis_bbox() -> Optional[List[float]]:
         QMessageBox.information(
             None,
             "Выбор территории",
-            "Выберите 4 точки на карте, затем дождитесь завершения."
+            "Выберите 4 точки на карте, затем дождитесь завершения.",
         )
 
         loop = QEventLoop()
@@ -324,7 +323,7 @@ def select_analysis_bbox() -> Optional[List[float]]:
         transform = QgsCoordinateTransform(
             QgsCoordinateReferenceSystem("EPSG:3857"),
             QgsCoordinateReferenceSystem("EPSG:4326"),
-            QgsProject.instance()
+            QgsProject.instance(),
         )
         points_4326 = [transform.transform(p) for p in tool.points]
 
