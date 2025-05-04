@@ -1,22 +1,23 @@
 import processing
 from qgis.core import QgsRasterLayer
-from ...river.layers.utils import load_saga_algorithms
 
 
 def build_basins_layer(reprojected_relief, basins_path: str) -> QgsRasterLayer:
-    load_saga_algorithms()
-
-    # Использовать SAGA Fill Sinks для извлечения водосборов
+    """
+    Заполняет DEM, считает потоковые направления и строит водосборы
+    через GRASS r.watershed (аналог SAGA FillSinks + Watershed).
+    """
     processing.run(
-        "sagang:fillsinkswangliu",
+        "grass7:r.watershed",
         {
-            "ELEV": reprojected_relief,
-            "FILLED": "TEMPORARY_OUTPUT",
-            "FDIR": "TEMPORARY_OUTPUT",
-            "WSHED": basins_path,
-            "MINSLOPE": 0.01,
+            "elevation": reprojected_relief,
+            "threshold": 1000,
+            "basin": basins_path,
+            "memory": 300,  # MB для GRASS
+            "GRASS_REGION_PARAMETER": None,
+            "GRASS_RASTER_FORMAT_OPT": "",
+            "GRASS_RASTER_FORMAT_META": "",
         },
     )
-
     # Сохранить и добавить заполненные области водосбора в проект
     return QgsRasterLayer(basins_path, "basins")
