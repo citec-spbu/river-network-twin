@@ -18,155 +18,6 @@ from osgeo import gdal
 from datetime import datetime
 
 
-def mean_pool2d(arr, kernel_size, stride=None):
-    """
-    Применяет mean pooling к 2D массиву.
-
-    Параметры:
-        arr: 2D NumPy array
-        kernel_size: размер ядра (int или tuple) (h, w)
-        stride: шаг (int или tuple). Если None, равен kernel_size
-
-    Возвращает:
-        2D массив после max pooling
-    """
-    if isinstance(kernel_size, int):
-        kh, kw = kernel_size, kernel_size
-    else:
-        kh, kw = kernel_size
-
-    if stride is None:
-        sh, sw = kh, kw
-    elif isinstance(stride, int):
-        sh, sw = stride, stride
-    else:
-        sh, sw = stride
-
-    # Вычисляем размеры выходного массива
-    H, W = arr.shape
-    oh = (H - kh) // sh + 1
-    ow = (W - kw) // sw + 1
-
-    # строим «скользящее окно»
-    shape = (oh, ow, kh, kw)
-    strides = (arr.strides[0] * sh, arr.strides[1] * sw, arr.strides[0], arr.strides[1])
-    windows = np.lib.stride_tricks.as_strided(arr, shape=shape, strides=strides)
-
-    # усредняем сразу по последним двум осям
-    return windows.mean(axis=(2, 3))
-
-
-def generate_cost_layer(dem_path, project_folder, window_size=3, pool_size=3) -> str:
-    # читаем DEM
-    src_ds = gdal.Open(dem_path)
-
-    # извлекаем геотрансформ и размеры
-    gt = src_ds.GetGeoTransform()
-    crs = src_ds.GetProjection()
-    width = src_ds.RasterXSize
-    height = src_ds.RasterYSize
-
-    # вычисляем центр пикселя
-    center_longitude = gt[0] + gt[1] * (width / 2.0)
-    center_latitude = gt[3] + gt[5] * (height / 2.0)
-
-    utm_zone = int((center_longitude + 180.0) / 6.0) + 1
-    if center_latitude >= 0:
-        target_crs = f"EPSG:{32600 + utm_zone}"
-    else:
-        target_crs = f"EPSG:{32700 + utm_zone}"
-
-    # 1. перепроецируем DEM в UTM в памяти
-    mem_utm = gdal.Warp(
-        "", src_ds, format="MEM", dstSRS=target_crs, resampleAlg=gdal.GRA_Bilinear
-    )
-
-    # 2. на этом промежуточном объекте считаем уклон
-    mem_slope_utm = gdal.DEMProcessing(
-        "",
-        mem_utm,
-        "slope",
-        format="MEM",
-        scale=1.0,
-        slopeFormat="degree",
-        alg="ZevenbergenThorne",
-    )
-
-    # Warp уклона обратно в исходный CRS
-    mem_slope = gdal.Warp(
-        "", mem_slope_utm, format="MEM", dstSRS=crs, resampleAlg=gdal.GRA_Bilinear
-    )
-    # Загружаем растр через GDAL
-    slope_arr = mem_slope.GetRasterBand(1).ReadAsArray().astype(np.float32)
-
-    # Быстрый расчёт локальной дисперсии через фильтры
-    mean1 = uniform_filter(slope_arr, size=window_size, mode="reflect")
-    mean2 = uniform_filter(slope_arr * slope_arr, size=window_size, mode="reflect")
-    variance_array = mean2 - mean1 * mean1
-
-    # 3. Пороги
-    variance_array[variance_array < 0] = 0
-    if np.any(variance_array > 0):
-        median_var = np.nanmedian(variance_array)
-        mad = 1.4826 * np.nanmedian(np.abs(variance_array - median_var))
-        threshold = median_var + 3 * mad
-        print(f"Threshold: {threshold}", flush=True)
-        variance_array[variance_array > threshold] = threshold
-
-    variance_array = np.nan_to_num(variance_array, nan=10)
-    print(variance_array.shape, flush=True)
-
-    # 4. Пулинг
-    var_pooled = mean_pool2d(variance_array, pool_size)
-    print(var_pooled.shape, flush=True)
-
-    # 5. Сохраняем результат
-    out_path = f"{project_folder}/slope_disp.tif"
-    drv = gdal.GetDriverByName("GTiff")
-    out = drv.Create(
-        out_path, var_pooled.shape[1], var_pooled.shape[0], 1, gdal.GDT_Float32
-    )
-
-    # скорректировать геотрансформацию для нового размера
-    old_h, old_w = slope_arr.shape
-    nh, nw = var_pooled.shape
-    gt_slope = mem_slope.GetGeoTransform()
-    new_gt = (
-        gt_slope[0],
-        gt_slope[1] * (old_w / nw),
-        gt_slope[2],
-        gt_slope[3],
-        gt_slope[4],
-        gt_slope[5] * (old_h / nh),
-    )
-    out.SetGeoTransform(new_gt)
-    out.SetProjection(crs)
-
-    band = out.GetRasterBand(1)
-    band.SetNoDataValue(-1)
-    band.WriteArray(var_pooled)
-    band.FlushCache()
-    band.ComputeStatistics(False)
-    band.SetStatistics(
-        float(np.nanmin(var_pooled)),
-        float(np.nanmax(var_pooled)),
-        float(np.nanmean(var_pooled)),
-        float(np.std(var_pooled)),
-    )
-
-    out.SetMetadataItem("STATISTICS_MINIMUM", "0")
-    out.SetMetadataItem("STATISTICS_MAXIMUM", str(float(np.nanmax(var_pooled))))
-    out.SetMetadataItem("STATISTICS_MEAN", str(float(np.nanmean(var_pooled))))
-
-    # Закрываем
-    src_ds = None
-    mem_utm = None
-    mem_slope = None
-    out = None
-
-    return out_path
-
-
 def least_cost_path_analysis(project_folder):
     # Получение необходимых слоев
     try:
@@ -175,17 +26,10 @@ def least_cost_path_analysis(project_folder):
         QMessageBox.warning(None, "Ошибка", "Слой 'MaxHeightPoints' не найден.")
         return
 
-    disp_layer_path = generate_cost_layer(
-        f"{project_folder}/srtm_output.tif", project_folder, 3, 3
-    )
-    cost_layer = QgsRasterLayer(disp_layer_path, "Slope Disp Layer")
-    if cost_layer.isValid():
-        QgsProject.instance().addMapLayer(cost_layer)
-        print("Создан слой уклона", flush=True)
-    else:
-        QMessageBox.warning(None, "Ошибка", "Не удалось загрузить слой крутизны.")
-        return
-
+    print("Используется DEM в качестве слоя стоимости", flush=True)
+    dem_path = f"{project_folder}/srtm_output.tif"
+    cost_layer = QgsRasterLayer(dem_path, "DEM Cost Layer")
+    
     print(f"Старт: {datetime.now()}", flush=True)
 
     # строим граф из cost_layer
