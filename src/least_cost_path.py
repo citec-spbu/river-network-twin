@@ -1,4 +1,5 @@
 import math
+import time
 from qgis.core import (
     QgsField,
     QgsProject,
@@ -29,8 +30,8 @@ def least_cost_path_analysis(project_folder):
     print("Используется DEM в качестве слоя стоимости", flush=True)
     dem_path = f"{project_folder}/srtm_output.tif"
     cost_layer = QgsRasterLayer(dem_path, "DEM Cost Layer")
-    
-    print(f"Старт: {datetime.now()}", flush=True)
+
+    t_paths_start = time.perf_counter()
 
     # строим граф из cost_layer
     G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source())
@@ -99,7 +100,8 @@ def least_cost_path_analysis(project_folder):
     QgsProject.instance().addMapLayer(paths_layer)
     print("Создан слой с путями", flush=True)
 
-    print(f"Конец: {datetime.now()}", flush=True)
+    t_paths_end = time.perf_counter()
+    print(f"Для построения слоя с путями потребовалось: {t_paths_end - t_paths_start:.3f} s", flush=True)
 
     # Вспомогательная функция для расчёта минимальной высоты вдоль линии
     def calculate_minimum_elevation(raster_layer, line_geom):
@@ -118,6 +120,8 @@ def least_cost_path_analysis(project_folder):
                         min_elev = min(min_elev, value)
         return min_elev if min_elev != float("inf") else None
 
+    t_filter1_start = time.perf_counter()
+    
     try:
         elevation_layer = QgsProject.instance().mapLayersByName("SRTM DEM Layer")[0]
     except IndexError:
@@ -165,7 +169,12 @@ def least_cost_path_analysis(project_folder):
             None,
             "Информация",
             f"Удалено {len(paths_to_delete)} путей по критерию высоты.",
-        )
+        )   
+    
+    t_filter1_end = time.perf_counter()
+    print(f"Время фильтрации путей по критерию разницы высот: {t_filter1_end - t_filter1_start:.3f} s", flush=True)
+    
+    t_filter2_start = time.perf_counter()
 
     # Фильтрация путей, пересекающих реки (исключая совпадающие начала/концы)
     try:
@@ -209,6 +218,10 @@ def least_cost_path_analysis(project_folder):
             "Информация",
             f"Удалено {len(paths_to_delete)} путей, пересекающих реки.",
         )
+
+    t_filter2_end = time.perf_counter()
+    print(f"Время фильтрации путей, пересекающих реки: {t_filter2_end - t_filter2_start:.3f} s", flush=True)
+
 
 
 def build_cost_graph(raster_path, eps=1e-6):
