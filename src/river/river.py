@@ -290,7 +290,7 @@ def select_analysis_bbox() -> Optional[List[float]]:
             None,
             "Радиус вокруг точки",
             "Введите радиус (градусы):",
-            value=0.5, min=0.1, max=5, decimals=1
+            value=0.5, min=0.1, max=5, decimals=5
         )
         if not ok:
             return None
