@@ -9,14 +9,13 @@ from qgis.core import (
     QgsRasterLayer,
     QgsVectorLayer,
     QgsFeature,
+    QgsCoordinateTransform,
+    QgsCoordinateReferenceSystem,
 )
 from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtWidgets import QMessageBox
-import numpy as np
 import networkit as nk
-from scipy.ndimage import uniform_filter
 from osgeo import gdal
-from datetime import datetime
 
 
 def least_cost_path_analysis(project_folder):
@@ -27,39 +26,60 @@ def least_cost_path_analysis(project_folder):
         QMessageBox.warning(None, "Ошибка", "Слой 'MaxHeightPoints' не найден.")
         return
 
+    src_crs = points_layer.crs()
+    tgt_crs = QgsCoordinateReferenceSystem("EPSG:3857")
+    transform_context = QgsProject.instance().transformContext()
+    coord_transform = QgsCoordinateTransform(src_crs, tgt_crs, transform_context)
+
     print("Используется DEM в качестве слоя стоимости", flush=True)
-    dem_path = f"{project_folder}/srtm_output.tif"
-    cost_layer = QgsRasterLayer(dem_path, "DEM Cost Layer")
+    dem_src = f"{project_folder}/srtm_output.tif"
+    dem_3857 = f"{project_folder}/srtm_output_3857.tif"
+    gdal.Warp(
+        dem_3857, dem_src, dstSRS="EPSG:3857", resampleAlg="bilinear", format="GTiff"
+    )
+
+    dem_pooled = f"{project_folder}/srtm_output_3857_pooled.tif"
+    ds3857 = gdal.Open(dem_3857)
+    gt3857 = ds3857.GetGeoTransform()
+    orig_xres = gt3857[1]
+    orig_yres = abs(gt3857[5])
+    gdal.Warp(
+        destNameOrDestDS=dem_pooled,
+        srcDSOrSrcDSTab=dem_3857,
+        xRes=orig_xres * 4,
+        yRes=orig_yres * 4,
+        resampleAlg="average",
+        format="GTiff",
+    )
+
+    cost_layer = QgsRasterLayer(dem_pooled, "DEM Cost Layer")
+    if not cost_layer.isValid():
+        QMessageBox.warning(
+            None, "Ошибка", "Не удалось загрузить перепроецированный DEM."
+        )
+        return
 
     t_paths_start = time.perf_counter()
 
     # строим граф из cost_layer
     G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source())
 
-    end_nodes = {}
-    for feat in points_layer.getFeatures():
-        if feat["z"] is None:
-            continue
-
-        x = feat.geometry().asPoint().x()
-        y = feat.geometry().asPoint().y()
-        i, j = coord_to_pixel(x, y, gt, n_rows, n_cols)
-        end_nodes[feat.id()] = i * n_cols + j
-
-    # Собираем список терминалов и их узловых индексов
     fid_to_node = {}
     terminal_fids = []
     for feat in points_layer.getFeatures():
-        if feat["z"] is None:
+        z = feat["z"]
+        if z is None:
             continue
-        fid = feat.id()
-        x, y = feat.geometry().asPoint().x(), feat.geometry().asPoint().y()
-        i, j = coord_to_pixel(x, y, gt, n_rows, n_cols)
-        node = i * n_cols + j
-        fid_to_node[fid] = node
-        terminal_fids.append(fid)
 
-    uri = f"LineString?crs={points_layer.crs().authid()}"
+        pt = feat.geometry().asPoint()
+        pt3857 = coord_transform.transform(pt)
+        i, j = coord_to_pixel(pt3857.x(), pt3857.y(), gt, n_rows, n_cols)
+        node_idx = i * n_cols + j
+
+        fid_to_node[feat.id()] = node_idx
+        terminal_fids.append(feat.id())
+
+    uri = f"LineString?crs=EPSG:3857"
     paths_layer = QgsVectorLayer(uri, "Output least cost path", "memory")
     dp = paths_layer.dataProvider()
     dp.addAttributes(
@@ -101,7 +121,10 @@ def least_cost_path_analysis(project_folder):
     print("Создан слой с путями", flush=True)
 
     t_paths_end = time.perf_counter()
-    print(f"Для построения слоя с путями потребовалось: {t_paths_end - t_paths_start:.3f} s", flush=True)
+    print(
+        f"Для построения слоя с путями потребовалось: {t_paths_end - t_paths_start:.3f} s",
+        flush=True,
+    )
 
     # Вспомогательная функция для расчёта минимальной высоты вдоль линии
     def calculate_minimum_elevation(raster_layer, line_geom):
@@ -121,7 +144,7 @@ def least_cost_path_analysis(project_folder):
         return min_elev if min_elev != float("inf") else None
 
     t_filter1_start = time.perf_counter()
-    
+
     try:
         elevation_layer = QgsProject.instance().mapLayersByName("SRTM DEM Layer")[0]
     except IndexError:
@@ -169,11 +192,14 @@ def least_cost_path_analysis(project_folder):
             None,
             "Информация",
             f"Удалено {len(paths_to_delete)} путей по критерию высоты.",
-        )   
-    
+        )
+
     t_filter1_end = time.perf_counter()
-    print(f"Время фильтрации путей по критерию разницы высот: {t_filter1_end - t_filter1_start:.3f} s", flush=True)
-    
+    print(
+        f"Время фильтрации путей по критерию разницы высот: {t_filter1_end - t_filter1_start:.3f} s",
+        flush=True,
+    )
+
     t_filter2_start = time.perf_counter()
 
     # Фильтрация путей, пересекающих реки (исключая совпадающие начала/концы)
@@ -220,8 +246,10 @@ def least_cost_path_analysis(project_folder):
         )
 
     t_filter2_end = time.perf_counter()
-    print(f"Время фильтрации путей, пересекающих реки: {t_filter2_end - t_filter2_start:.3f} s", flush=True)
-
+    print(
+        f"Время фильтрации путей, пересекающих реки: {t_filter2_end - t_filter2_start:.3f} s",
+        flush=True,
+    )
 
 
 def build_cost_graph(raster_path, eps=1e-6):
