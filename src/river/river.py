@@ -688,3 +688,4 @@ def assign_clusters(data_for_clustering, point_layer):
     point_layer.commitChanges()
 
     return point_layer       
+
