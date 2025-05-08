@@ -1,6 +1,6 @@
 import processing
 from qgis.utils import iface
-from qgis.core import QgsVectorLayer, QgsField
+from qgis.core import QgsVectorLayer, QgsField, QgsVectorFileWriter, QgsProject
 from qgis.PyQt.QtCore import QVariant
 
 

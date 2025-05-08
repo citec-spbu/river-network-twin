@@ -6,7 +6,6 @@ from qgis.core import (
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
     QgsPointXY,
-    QgsVectorLayer,
     QgsGeometry,
     QgsField,
     QgsRaster,
@@ -17,6 +16,7 @@ from qgis.PyQt.QtWidgets import QMessageBox, QInputDialog
 from qgis.utils import iface
 from .point_selection_tool import PointSelectionTool
 from .layers.rivers_by_object_filtered import build_rivers_by_object_filtered
+from ..river.layers.max_height_points import build_max_height_points
 from ..river.layers.basins import build_basins_layer
 from ..river.layers.rivers_and_points import build_rivers_and_points_layer
 from ..river.layers.rivers_merged import build_merged_layer
@@ -79,7 +79,9 @@ def river(project_folder):
     # Использовать QuickOSM для запроса данных о водных путях на заданной территории
     extent = transform_bbox(bbox[0], bbox[2], bbox[1], bbox[3], 4326, 3857)
     merged_path = os.path.join(project_folder, "merge_result.gpkg")
-    rivers_merged = build_merged_layer(extent, merged_path)
+    rivers_path = os.path.join(project_folder, "rivers.gpkg")
+    streams_path = os.path.join(project_folder, "streams.gpkg")
+    rivers_merged = build_merged_layer(extent, merged_path, rivers_path, streams_path)
     QgsProject.instance().addMapLayer(rivers_merged)
 
     # Загрузить полигональные данные о водных объектах
@@ -208,20 +210,6 @@ def river(project_folder):
     rivers_and_points = build_rivers_and_points_layer(end_y, rivers_and_points_path)
     QgsProject.instance().addMapLayer(rivers_and_points)
 
-    # Создать слой точек максимальной высоты
-    point_layer = QgsVectorLayer("Point?crs=epsg:4326", "MaxHeightPoints", "memory")
-    QgsProject.instance().addMapLayer(point_layer)
-    layer_provider = point_layer.dataProvider()
-    layer_provider.addAttributes(
-        [
-            QgsField("x", QVariant.Double),
-            QgsField("y", QVariant.Double),
-            QgsField("z", QVariant.Double),
-        ]
-    )
-    point_layer.updateFields()
-    fields = point_layer.fields()
-
     # Сначала собираем все конечные и начальные точки
     start_points = set()
     end_points = set()
@@ -233,6 +221,11 @@ def river(project_folder):
             start_points.add((sx, sy))
         if ex is not None and ey is not None:
             end_points.add((ex, ey))
+
+    # Создать слой точек максимальной высоты
+    point_layer_path = os.path.join(project_folder, "max_height_points.gpkg")
+    point_layer = build_max_height_points(point_layer_path)
+    fields = point_layer.fields()
 
     point_layer.startEditing()
     for feat in rivers_and_points.getFeatures():
