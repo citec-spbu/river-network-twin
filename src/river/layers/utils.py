@@ -1,15 +1,7 @@
 import processing
 from qgis.utils import iface
-from processing_saga_nextgen.saga_nextgen_plugin import SagaNextGenAlgorithmProvider
-from qgis.core import QgsApplication, QgsVectorLayer, QgsField
+from qgis.core import QgsVectorLayer, QgsField
 from qgis.PyQt.QtCore import QVariant
-
-
-def load_saga_algorithms():
-    provider = SagaNextGenAlgorithmProvider()
-    provider.loadAlgorithms()
-
-    QgsApplication.processingRegistry().addProvider(provider=provider)
 
 
 def load_quickosm_layer(
