@@ -21,6 +21,7 @@ from ..river.layers.basins import build_basins_layer
 from ..river.layers.rivers_and_points import build_rivers_and_points_layer
 from ..river.layers.rivers_merged import build_merged_layer
 from ..river.layers.utils import load_quickosm_layer
+from ..river.layers.clustering import *
 from ..common import *
 
 RIVER_FILTERS = {
@@ -28,6 +29,10 @@ RIVER_FILTERS = {
     "total_length": (">", 1000),
 }
 
+# ========== НАСТРОЙКА ПАРАМЕТРОВ ДЛЯ КЛАСТЕРИЗАЦИИ ==========
+RESAMPLE_SCALE = 5                # Параметр масштаба для ресемплинга (2-10)
+CONTOUR_INTERVAL = 20             # Интервал изолиний в метрах
+# ============================================================
 
 def transform_bbox(x_min, x_max, y_min, y_max, from_epsg, to_epsg):
     # Создаем объекты систем координат
@@ -270,7 +275,20 @@ def river(project_folder):
     # Завершение редактирования и сохранение изменений
     point_layer.commitChanges(True)
     QgsProject.instance().addMapLayer(point_layer)
+    # Добавление слоёв кластеризации
+    copied_point_layer = point_layer.clone()
+    data_for_clustering = preparing_data_for_clustering(
+        copied_point_layer, 
+        dem_layer,
+        RESAMPLE_SCALE,
+        CONTOUR_INTERVAL
+    )
+    data_for_clustering.setName("Изолинии")
+    QgsProject.instance().addMapLayer(data_for_clustering)
 
+    points_and_clusters = assign_clusters(data_for_clustering, copied_point_layer)
+    points_and_clusters.setName("Points_and_clusters")
+    QgsProject.instance().addMapLayer(points_and_clusters)
 
 def select_analysis_bbox() -> Optional[List[float]]:
     method, ok = QInputDialog.getItem(
@@ -335,3 +353,4 @@ def select_analysis_bbox() -> Optional[List[float]]:
         return [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
 
     return None
+
