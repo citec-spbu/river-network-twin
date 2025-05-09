@@ -1,0 +1,9 @@
+[general]
+name=RiverNETWORK
+qgisMinimumVersion=3.16
+description=Плагин для работы с реками
+author=spbu
+email=st107749@student.spbu.ru
+version=1.1
+category=Прочее
+icon=icon.png
