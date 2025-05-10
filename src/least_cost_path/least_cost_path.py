@@ -1,20 +1,17 @@
 import math
 import os
 import time
-from least_cost_path.layers.output_least_cost_path import build_output_least_cost_path
+from .layers.output_least_cost_path import build_output_least_cost_path
 from qgis.core import (
-    QgsField,
     QgsProject,
     QgsPointXY,
     QgsGeometry,
     QgsSpatialIndex,
     QgsRasterLayer,
-    QgsVectorLayer,
     QgsFeature,
     QgsCoordinateTransform,
     QgsCoordinateReferenceSystem,
 )
-from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtWidgets import QMessageBox
 import networkit as nk
 from osgeo import gdal

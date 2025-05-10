@@ -32,7 +32,12 @@ def build_output_least_cost_path(
 
     # Создаем GeoPackage-слой
     QgsVectorFileWriter.create(
-        point_layer_path, fields, QgsWkbTypes.Point, crs, transform_context, options
+        point_layer_path,
+        fields,
+        QgsWkbTypes.LineString,
+        crs,
+        transform_context,
+        options,
     )
 
     # Открываем и добавляем в проект
