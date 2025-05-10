@@ -1,12 +1,21 @@
 import os
 from typing import List, Optional
+from ..common import (
+    add_dem_layer,
+    add_opentopo_layer,
+    download_dem,
+    enable_processing_algorithms,
+    get_coordinates,
+    reproject_dem,
+    set_project_crs,
+    transform_coordinates,
+)
 import processing
 from qgis.core import (
     QgsProject,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
     QgsPointXY,
-    QgsVectorLayer,
     QgsGeometry,
     QgsField,
     QgsRaster,
@@ -17,12 +26,12 @@ from qgis.PyQt.QtWidgets import QMessageBox, QInputDialog
 from qgis.utils import iface
 from .point_selection_tool import PointSelectionTool
 from .layers.rivers_by_object_filtered import build_rivers_by_object_filtered
+from ..river.layers.max_height_points import build_max_height_points
 from ..river.layers.basins import build_basins_layer
 from ..river.layers.rivers_and_points import build_rivers_and_points_layer
 from ..river.layers.rivers_merged import build_merged_layer
 from ..river.layers.utils import load_quickosm_layer
-from ..river.layers.clustering import *
-from ..common import *
+from ..river.layers.clustering import assign_clusters, preparing_data_for_clustering
 
 RIVER_FILTERS = {
     "max_strahler_order": (">=", 2),
@@ -30,9 +39,10 @@ RIVER_FILTERS = {
 }
 
 # ========== НАСТРОЙКА ПАРАМЕТРОВ ДЛЯ КЛАСТЕРИЗАЦИИ ==========
-RESAMPLE_SCALE = 5                # Параметр масштаба для ресемплинга (2-10)
-CONTOUR_INTERVAL = 20             # Интервал изолиний в метрах
+RESAMPLE_SCALE = 5  # Параметр масштаба для ресемплинга (2-10)
+CONTOUR_INTERVAL = 20  # Интервал изолиний в метрах
 # ============================================================
+
 
 def transform_bbox(x_min, x_max, y_min, y_max, from_epsg, to_epsg):
     # Создаем объекты систем координат
@@ -79,7 +89,9 @@ def river(project_folder):
     # Использовать QuickOSM для запроса данных о водных путях на заданной территории
     extent = transform_bbox(bbox[0], bbox[2], bbox[1], bbox[3], 4326, 3857)
     merged_path = os.path.join(project_folder, "merge_result.gpkg")
-    rivers_merged = build_merged_layer(extent, merged_path)
+    rivers_path = os.path.join(project_folder, "rivers.gpkg")
+    streams_path = os.path.join(project_folder, "streams.gpkg")
+    rivers_merged = build_merged_layer(extent, merged_path, rivers_path, streams_path)
     QgsProject.instance().addMapLayer(rivers_merged)
 
     # Загрузить полигональные данные о водных объектах
@@ -208,20 +220,6 @@ def river(project_folder):
     rivers_and_points = build_rivers_and_points_layer(end_y, rivers_and_points_path)
     QgsProject.instance().addMapLayer(rivers_and_points)
 
-    # Создать слой точек максимальной высоты
-    point_layer = QgsVectorLayer("Point?crs=epsg:4326", "MaxHeightPoints", "memory")
-    QgsProject.instance().addMapLayer(point_layer)
-    layer_provider = point_layer.dataProvider()
-    layer_provider.addAttributes(
-        [
-            QgsField("x", QVariant.Double),
-            QgsField("y", QVariant.Double),
-            QgsField("z", QVariant.Double),
-        ]
-    )
-    point_layer.updateFields()
-    fields = point_layer.fields()
-
     # Сначала собираем все конечные и начальные точки
     start_points = set()
     end_points = set()
@@ -233,6 +231,11 @@ def river(project_folder):
             start_points.add((sx, sy))
         if ex is not None and ey is not None:
             end_points.add((ex, ey))
+
+    # Создать слой точек максимальной высоты
+    point_layer_path = os.path.join(project_folder, "max_height_points.gpkg")
+    point_layer = build_max_height_points(point_layer_path)
+    fields = point_layer.fields()
 
     point_layer.startEditing()
     for feat in rivers_and_points.getFeatures():
@@ -278,10 +281,7 @@ def river(project_folder):
     # Добавление слоёв кластеризации
     copied_point_layer = point_layer.clone()
     data_for_clustering = preparing_data_for_clustering(
-        copied_point_layer, 
-        dem_layer,
-        RESAMPLE_SCALE,
-        CONTOUR_INTERVAL
+        copied_point_layer, dem_layer, RESAMPLE_SCALE, CONTOUR_INTERVAL
     )
     data_for_clustering.setName("Изолинии")
     QgsProject.instance().addMapLayer(data_for_clustering)
@@ -289,6 +289,7 @@ def river(project_folder):
     points_and_clusters = assign_clusters(data_for_clustering, copied_point_layer)
     points_and_clusters.setName("Points_and_clusters")
     QgsProject.instance().addMapLayer(points_and_clusters)
+
 
 def select_analysis_bbox() -> Optional[List[float]]:
     method, ok = QInputDialog.getItem(
@@ -353,4 +354,3 @@ def select_analysis_bbox() -> Optional[List[float]]:
         return [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
 
     return None
-

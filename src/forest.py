@@ -1,5 +1,7 @@
 import os
 import math
+from .common import add_dem_layer, get_main_def
+
 import numpy as np
 import processing
 from osgeo import gdal
@@ -24,7 +26,6 @@ from qgis.PyQt.QtCore import QVariant, QEventLoop, pyqtSignal
 from qgis.PyQt.QtGui import QColor
 from PyQt5.QtWidgets import QPushButton
 from qgis.utils import iface
-from .common import *
 
 
 def start_point_collection():

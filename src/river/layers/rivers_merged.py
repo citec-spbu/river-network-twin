@@ -3,11 +3,17 @@ from qgis.core import QgsVectorLayer
 from ...river.layers.utils import load_quickosm_layer
 
 
-def build_merged_layer(extent, merged_path: str) -> QgsVectorLayer:
+def build_merged_layer(
+    extent, merged_path: str, rivers_path: str, streams_path: str
+) -> QgsVectorLayer:
     # Загрузить реки
-    rivers_layer = load_quickosm_layer("rivers", "waterway", "river", extent)
+    rivers_layer = load_quickosm_layer(
+        "rivers", "waterway", "river", extent, rivers_path
+    )
     # Загрузить ручьи
-    streams_layer = load_quickosm_layer("streams", "waterway", "stream", extent)
+    streams_layer = load_quickosm_layer(
+        "streams", "waterway", "stream", extent, streams_path
+    )
 
     # Объединить слои рек и ручьев
     merge_result = processing.run(

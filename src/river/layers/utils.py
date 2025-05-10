@@ -90,22 +90,30 @@ def compute_strahler(rivers_layer):
         incoming[v].append((u, fid))
 
     orders = {}
+    visited = set()
 
     def calc_edge(fid, from_node):
+        if (fid, from_node) in visited:
+            return 0
+        visited.add((fid, from_node))
+
         if fid in orders:
             return orders[fid]
+
         preds = incoming[from_node]
         if not preds:
             orders[fid] = 1
-            return 1
-        child = [calc_edge(up_fid, up_node) for up_node, up_fid in preds]
-        m = max(child)
-        orders[fid] = m + 1 if child.count(m) > 1 else m
+        else:
+            child_orders = [calc_edge(up_fid, up_node) for up_node, up_fid in preds]
+            m = max(child_orders)
+            orders[fid] = m + 1 if child_orders.count(m) > 1 else m
+
         return orders[fid]
 
     for node in range(next_node):
         if not outgoing[node]:
             for _, fid in incoming[node]:
+                visited.clear()
                 calc_edge(fid, node)
 
     rivers_layer.startEditing()
