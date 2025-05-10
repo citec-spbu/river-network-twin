@@ -1,6 +1,15 @@
 import os
 from typing import List, Optional
-from ..common import add_dem_layer, add_opentopo_layer, download_dem, enable_processing_algorithms, get_coordinates, reproject_dem, set_project_crs, transform_coordinates
+from ..common import (
+    add_dem_layer,
+    add_opentopo_layer,
+    download_dem,
+    enable_processing_algorithms,
+    get_coordinates,
+    reproject_dem,
+    set_project_crs,
+    transform_coordinates,
+)
 import processing
 from qgis.core import (
     QgsProject,
@@ -22,8 +31,7 @@ from ..river.layers.basins import build_basins_layer
 from ..river.layers.rivers_and_points import build_rivers_and_points_layer
 from ..river.layers.rivers_merged import build_merged_layer
 from ..river.layers.utils import load_quickosm_layer
-from ..river.layers.clustering import *
-from ..common import *
+from ..river.layers.clustering import assign_clusters, preparing_data_for_clustering
 
 RIVER_FILTERS = {
     "max_strahler_order": (">=", 2),
@@ -31,9 +39,10 @@ RIVER_FILTERS = {
 }
 
 # ========== НАСТРОЙКА ПАРАМЕТРОВ ДЛЯ КЛАСТЕРИЗАЦИИ ==========
-RESAMPLE_SCALE = 5                # Параметр масштаба для ресемплинга (2-10)
-CONTOUR_INTERVAL = 20             # Интервал изолиний в метрах
+RESAMPLE_SCALE = 5  # Параметр масштаба для ресемплинга (2-10)
+CONTOUR_INTERVAL = 20  # Интервал изолиний в метрах
 # ============================================================
+
 
 def transform_bbox(x_min, x_max, y_min, y_max, from_epsg, to_epsg):
     # Создаем объекты систем координат
@@ -272,10 +281,7 @@ def river(project_folder):
     # Добавление слоёв кластеризации
     copied_point_layer = point_layer.clone()
     data_for_clustering = preparing_data_for_clustering(
-        copied_point_layer, 
-        dem_layer,
-        RESAMPLE_SCALE,
-        CONTOUR_INTERVAL
+        copied_point_layer, dem_layer, RESAMPLE_SCALE, CONTOUR_INTERVAL
     )
     data_for_clustering.setName("Изолинии")
     QgsProject.instance().addMapLayer(data_for_clustering)
@@ -283,6 +289,7 @@ def river(project_folder):
     points_and_clusters = assign_clusters(data_for_clustering, copied_point_layer)
     points_and_clusters.setName("Points_and_clusters")
     QgsProject.instance().addMapLayer(points_and_clusters)
+
 
 def select_analysis_bbox() -> Optional[List[float]]:
     method, ok = QInputDialog.getItem(
@@ -347,4 +354,3 @@ def select_analysis_bbox() -> Optional[List[float]]:
         return [min(x_coords), min(y_coords), max(x_coords), max(y_coords)]
 
     return None
-
