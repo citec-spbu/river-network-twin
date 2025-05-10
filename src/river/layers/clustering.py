@@ -81,14 +81,14 @@ def preparing_data_for_clustering(
         )["OUTPUT"]
 
         # Проверка валидности геометрии
-        processing.run(
+        fixed = processing.run(
             "native:fixgeometries", {"INPUT": selected_layer, "OUTPUT": "memory:"}
-        )
+        )["OUTPUT"]
 
         # Слияние через coverageunion
         merged = processing.run(
-            "native:coverageunion",
-            {"INPUT": selected_layer, "OUTPUT": "TEMPORARY_OUTPUT"},
+            "native:dissolve",
+            {"INPUT": fixed, "FIELD": [], "OUTPUT": "memory:"},
         )["OUTPUT"]
 
         merged.startEditing()
