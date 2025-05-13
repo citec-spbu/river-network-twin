@@ -85,7 +85,7 @@ def preparing_data_for_clustering(
             "native:fixgeometries", {"INPUT": selected_layer, "OUTPUT": "memory:"}
         )["OUTPUT"]
 
-        # Слияние через coverageunion
+        # Слияние через dissolve
         merged = processing.run(
             "native:dissolve",
             {"INPUT": fixed, "FIELD": [], "OUTPUT": "memory:"},
