@@ -1,18 +1,17 @@
 import math
+import os
 import time
+from .layers.output_least_cost_path import build_output_least_cost_path
 from qgis.core import (
-    QgsField,
     QgsProject,
     QgsPointXY,
     QgsGeometry,
     QgsSpatialIndex,
     QgsRasterLayer,
-    QgsVectorLayer,
     QgsFeature,
     QgsCoordinateTransform,
     QgsCoordinateReferenceSystem,
 )
-from qgis.PyQt.QtCore import QVariant
 from qgis.PyQt.QtWidgets import QMessageBox
 import networkit as nk
 from osgeo import gdal
@@ -79,17 +78,10 @@ def least_cost_path_analysis(project_folder):
         fid_to_node[feat.id()] = node_idx
         terminal_fids.append(feat.id())
 
-    uri = f"LineString?crs=EPSG:3857"
-    paths_layer = QgsVectorLayer(uri, "Output least cost path", "memory")
-    dp = paths_layer.dataProvider()
-    dp.addAttributes(
-        [
-            QgsField("start_id", QVariant.Int),
-            QgsField("end_id", QVariant.Int),
-        ]
-    )
-    paths_layer.updateFields()
+    lcp_layer_path = os.path.join(project_folder, "output_least_cost_path.gpkg")
+    lcp_layer = build_output_least_cost_path(lcp_layer_path)
 
+    dp = lcp_layer.dataProvider()
     for src_fid in terminal_fids:
         src_node = fid_to_node[src_fid]
         dijk = nk.distance.Dijkstra(G, src_node)
@@ -110,14 +102,14 @@ def least_cost_path_analysis(project_folder):
                 for u in node_path
             ]
 
-            feat_out = QgsFeature(paths_layer.fields())
+            feat_out = QgsFeature(lcp_layer.fields())
             feat_out.setGeometry(QgsGeometry.fromPolylineXY(path_pts))
             feat_out["start_id"] = src_fid
             feat_out["end_id"] = dst_fid
             dp.addFeature(feat_out)
 
-    paths_layer.updateExtents()
-    QgsProject.instance().addMapLayer(paths_layer)
+    lcp_layer.updateExtents()
+    QgsProject.instance().addMapLayer(lcp_layer)
     print("Создан слой с путями", flush=True)
 
     t_paths_end = time.perf_counter()
@@ -153,7 +145,7 @@ def least_cost_path_analysis(project_folder):
 
     # Фильтрация путей по критерию разницы высот
     paths_to_delete = []
-    for feature in paths_layer.getFeatures():
+    for feature in lcp_layer.getFeatures():
         geom = feature.geometry()
         min_elev = calculate_minimum_elevation(elevation_layer, geom)
         if min_elev is None:
@@ -184,10 +176,10 @@ def least_cost_path_analysis(project_folder):
                 paths_to_delete.append(feature.id())
 
     if paths_to_delete:
-        paths_layer.startEditing()
+        lcp_layer.startEditing()
         for fid in paths_to_delete:
-            paths_layer.deleteFeature(fid)
-        paths_layer.commitChanges()
+            lcp_layer.deleteFeature(fid)
+        lcp_layer.commitChanges()
         QMessageBox.information(
             None,
             "Информация",
@@ -211,7 +203,7 @@ def least_cost_path_analysis(project_folder):
 
     spatial_index = QgsSpatialIndex(rivers_layer.getFeatures())
     paths_to_delete = []
-    for feature in paths_layer.getFeatures():
+    for feature in lcp_layer.getFeatures():
         geom = feature.geometry()
         if geom.isEmpty():
             continue
@@ -235,10 +227,10 @@ def least_cost_path_analysis(project_folder):
                 break
 
     if paths_to_delete:
-        paths_layer.startEditing()
+        lcp_layer.startEditing()
         for fid in paths_to_delete:
-            paths_layer.deleteFeature(fid)
-        paths_layer.commitChanges()
+            lcp_layer.deleteFeature(fid)
+        lcp_layer.commitChanges()
         QMessageBox.information(
             None,
             "Информация",
