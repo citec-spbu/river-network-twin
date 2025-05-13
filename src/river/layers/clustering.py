@@ -1,14 +1,14 @@
 from qgis.core import (
     QgsField,
     QgsSpatialIndex,
+    QgsVectorLayer,
+    QgsVectorFileWriter,
 )
 import processing
 from qgis.PyQt.QtCore import QVariant
 
 
-def preparing_data_for_clustering(
-    point_layer, dem_layer, RESAMPLE_SCALE, CONTOUR_INTERVAL
-):
+def preparing_data_for_clustering(point_layer, dem_layer, RESAMPLE_SCALE, CONTOUR_INTERVAL, data_for_clustering_path)-> QgsVectorLayer:
     # Создание ID для точек
     point_layer.startEditing()
     if "point_id" not in [f.name() for f in point_layer.fields()]:
@@ -231,10 +231,27 @@ def preparing_data_for_clustering(
 
     result_layer.commitChanges()
 
-    return result_layer
+    # Экспорт с указанием имени слоя
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.layerName = "Изолинии"
+    options.driverName = "GPKG"
+    QgsVectorFileWriter.writeAsVectorFormat(
+        result_layer, 
+        data_for_clustering_path, 
+        options
+    )
 
+    # Загрузка слоя
+    final_layer = QgsVectorLayer(
+        f"{data_for_clustering_path}|layername=Изолинии", 
+        "Изолинии", 
+        "ogr"
+    )
+    if not final_layer.isValid():
+        raise Exception("Слой не загружен!")
+    return final_layer
 
-def assign_clusters(data_for_clustering, point_layer):
+def assign_clusters(data_for_clustering, point_layer, points_and_clusters_path):
     # Создаем поле cluster, если его нет
     if point_layer.fields().indexFromName("cluster") == -1:
         point_layer.startEditing()
@@ -332,5 +349,23 @@ def assign_clusters(data_for_clustering, point_layer):
                     )
 
     point_layer.commitChanges()
+    
+    # Экспорт с указанием имени слоя
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.layerName = "Points_and_clusters"
+    options.driverName = "GPKG"
+    QgsVectorFileWriter.writeAsVectorFormat(
+        point_layer, 
+        points_and_clusters_path, 
+        options
+    )
 
-    return point_layer
+    # Загрузка слоя
+    final_layer = QgsVectorLayer(
+        f"{points_and_clusters_path}|layername=Points_and_clusters", 
+        "Points_and_clusters", 
+        "ogr"
+    )
+    if not final_layer.isValid():
+        raise Exception("Слой не загружен!")
+    return final_layer     
