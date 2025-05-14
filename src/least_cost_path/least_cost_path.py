@@ -15,6 +15,7 @@ from qgis.core import (
 from qgis.PyQt.QtWidgets import QMessageBox
 import networkit as nk
 from osgeo import gdal
+from ..src.river.layers.water_rasterized import build_water_rasterized
 
 
 def least_cost_path_analysis(project_folder):
@@ -61,11 +62,22 @@ def least_cost_path_analysis(project_folder):
             None, "Ошибка", "Не удалось загрузить перепроецированный DEM."
         )
         return
+    
+
+    water_rasterized = build_water_rasterized(f"{project_folder}/merge_result.gpkg", QgsProject.instance().mapLayersByName("water")[0], cost_layer.source(), f"{project_folder}/water_rasterized.tif", 0.001)
+    raster_layer = QgsRasterLayer(water_rasterized, "water_rasterized")
+    if raster_layer.isValid():
+        QgsProject.instance().addMapLayer(raster_layer)
+    else:
+        QMessageBox.warning(
+            None, "Ошибка", "Не удалось загрузить растеризованный слой воды."
+        )
+        return
 
     t_paths_start = time.perf_counter()
 
     # строим граф из cost_layer
-    G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source())
+    G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source(), water_rasterized)
 
     fid_to_node = {}
     terminal_fids = []
@@ -244,9 +256,14 @@ def least_cost_path_analysis(project_folder):
     )
 
 
-def build_cost_graph(raster_path, eps=1e-6):
-    ds = gdal.Open(raster_path)
-    arr = ds.GetRasterBand(1).ReadAsArray().astype(float)
+def build_cost_graph(raster_path, water_layer, eps=1e-6):
+    ds_cost = gdal.Open(raster_path)
+    arr = ds_cost.GetRasterBand(1).ReadAsArray().astype(float)
+    ds_water = gdal.Open(water_layer)
+    arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
+    nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
+    if nodata_water is not None:
+        arr_water[arr_water == nodata_water] = 0 
     rows, cols = arr.shape
     G = nk.Graph(rows * cols, weighted=True, directed=False)
 
@@ -275,9 +292,10 @@ def build_cost_graph(raster_path, eps=1e-6):
                     hv = arr[ni, nj]
                     dh = abs(hu - hv)
                     w = factor * (dh + eps)
-                    G.addEdge(u, nid(ni, nj), w)
+                    if arr_water[ni, nj] == 0 and arr_water[i, j] == 0:
+                        G.addEdge(u, nid(ni, nj), w)
 
-    gt = ds.GetGeoTransform()
+    gt = ds_cost.GetGeoTransform()
     return G, gt, rows, cols
 
 
