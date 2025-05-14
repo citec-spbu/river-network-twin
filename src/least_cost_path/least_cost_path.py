@@ -286,13 +286,15 @@ def build_cost_graph(raster_path, water_layer, eps=1e-6):
         for j in range(cols):
             u = nid(i, j)
             hu = arr[i, j]
+            if arr_water[i, j] != 0:
+                continue
             for di, dj, factor in neigh:
                 ni, nj = i + di, j + dj
                 if 0 <= ni < rows and 0 <= nj < cols:
                     hv = arr[ni, nj]
                     dh = abs(hu - hv)
                     w = factor * (dh + eps)
-                    if arr_water[ni, nj] == 0 and arr_water[i, j] == 0:
+                    if arr_water[ni, nj] == 0:
                         G.addEdge(u, nid(ni, nj), w)
 
     gt = ds_cost.GetGeoTransform()
@@ -311,6 +313,6 @@ def coord_to_pixel(x, y, gt, n_rows, n_cols):
 
 
 def pixel_to_coord(i, j, gt):
-    x = gt[0] + j * gt[1] + i * gt[2]
-    y = gt[3] + j * gt[4] + i * gt[5]
+    x = gt[0] + (j + 0.5) * gt[1] + (i + 0.5) * gt[2]
+    y = gt[3] + (j + 0.5) * gt[4] + (i + 0.5) * gt[5]
     return x, y
