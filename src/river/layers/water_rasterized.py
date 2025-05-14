@@ -1,5 +1,5 @@
 import processing
-from qgis.core import QgsVectorLayer
+from qgis.core import QgsVectorLayer, QgsCoordinateReferenceSystem
 from osgeo import gdal
 
 
@@ -60,7 +60,7 @@ def build_water_rasterized(
     else:
         return None
 
-    rastered = processing.run(
+    rasterized = processing.run(
         "gdal:rasterize",
         {
             "INPUT": merged_rivers_water,
@@ -77,9 +77,27 @@ def build_water_rasterized(
             "INIT": None,
             "INVERT": False,
             "EXTRA": "",
+            "OUTPUT": "TEMPORARY_OUTPUT",
+        },
+    )["OUTPUT"]
+
+    rasterized = processing.run(
+        "gdal:warpreproject",
+        {
+            "INPUT": rasterized,
+            "SOURCE_CRS": None,
+            "TARGET_CRS": QgsCoordinateReferenceSystem("EPSG:3857"),
+            "RESAMPLING": 0,
+            "NODATA": None,
+            "TARGET_RESOLUTION": None,
+            "OPTIONS": None,
+            "DATA_TYPE": 0,
+            "TARGET_EXTENT": None,
+            "TARGET_EXTENT_CRS": None,
+            "MULTITHREADING": False,
+            "EXTRA": "",
             "OUTPUT": output_path,
         },
     )["OUTPUT"]
 
-    del dem_dataset
-    return rastered
+    return rasterized
