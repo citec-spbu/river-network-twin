@@ -267,14 +267,10 @@ def build_cost_graph(raster_path, water_layer, eps=1e-6):
     rows, cols = arr.shape
     G = nk.Graph(rows * cols, weighted=True, directed=False)
 
-    # все 8 направлений: 4 ортогональных + 4 диагональных
+    # 4 направления от вниз-влево до вправо
     neigh = [
-        (-1, 0, 1.0),  # вверх
         (1, 0, 1.0),  # вниз
-        (0, -1, 1.0),  # влево
         (0, 1, 1.0),  # вправо
-        (-1, -1, math.sqrt(2)),  # диагонали
-        (-1, 1, math.sqrt(2)),
         (1, -1, math.sqrt(2)),
         (1, 1, math.sqrt(2)),
     ]
