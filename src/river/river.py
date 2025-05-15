@@ -280,14 +280,26 @@ def river(project_folder):
     QgsProject.instance().addMapLayer(point_layer)
     # Добавление слоёв кластеризации
     copied_point_layer = point_layer.clone()
-    data_for_clustering = preparing_data_for_clustering(
-        copied_point_layer, dem_layer, RESAMPLE_SCALE, CONTOUR_INTERVAL
+    data_for_clustering_path = os.path.join(
+        project_folder, "Изолинии.gpkg"
     )
-    data_for_clustering.setName("Изолинии")
+    data_for_clustering = preparing_data_for_clustering(
+        copied_point_layer, 
+        dem_layer,
+        RESAMPLE_SCALE,
+        CONTOUR_INTERVAL,
+        data_for_clustering_path
+    )
     QgsProject.instance().addMapLayer(data_for_clustering)
-
-    points_and_clusters = assign_clusters(data_for_clustering, copied_point_layer)
-    points_and_clusters.setName("Points_and_clusters")
+    
+    points_and_clusters_path = os.path.join(
+        project_folder, "Points_and_clusters.gpkg"
+    )    
+    points_and_clusters = assign_clusters(
+        data_for_clustering, 
+        copied_point_layer, 
+        points_and_clusters_path
+    )
     QgsProject.instance().addMapLayer(points_and_clusters)
 
 
