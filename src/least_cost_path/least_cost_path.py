@@ -34,7 +34,11 @@ def least_cost_path_analysis(project_folder):
     dem_src = f"{project_folder}/srtm_output.tif"
     dem_3857 = f"{project_folder}/srtm_output_3857.tif"
     gdal.Warp(
-        dem_3857, dem_src, dstSRS="EPSG:3857", resampleAlg="bilinear", format="GTiff"
+        dem_3857,
+        dem_src,
+        dstSRS="EPSG:3857",
+        resampleAlg="bilinear",
+        format="GTiff",
     )
 
     dem_pooled = f"{project_folder}/srtm_output_3857_pooled.tif"
@@ -137,11 +141,7 @@ def least_cost_path_analysis(project_folder):
 
     t_filter1_start = time.perf_counter()
 
-    try:
-        elevation_layer = QgsProject.instance().mapLayersByName("SRTM DEM Layer")[0]
-    except IndexError:
-        QMessageBox.warning(None, "Ошибка", "Слой 'SRTM DEM Layer' не найден.")
-        return
+    elevation_layer = QgsRasterLayer(dem_pooled, "SRTM DEM Layer Pooled (3857)")
 
     # Фильтрация путей по критерию разницы высот
     paths_to_delete = []
