@@ -79,9 +79,6 @@ def least_cost_path_analysis(project_folder):
     # строим граф из cost_layer
     G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source(), water_rasterized)
 
-    tmp_layer = QgsVectorLayer("Point?crs=EPSG:3857", "Точки", "memory")
-    tmp_provider = tmp_layer.dataProvider()
-
     fid_to_node = {}
     terminal_fids = []
     for feat in points_layer.getFeatures():
@@ -92,20 +89,10 @@ def least_cost_path_analysis(project_folder):
         pt = feat.geometry().asPoint()
         pt3857 = coord_transform.transform(pt)
         i, j = coord_to_pixel(pt3857.x(), pt3857.y(), gt, n_rows, n_cols)
-
-        tmp_point = QgsPointXY(*pixel_to_coord(i, j, gt))
-        tmp_feature = QgsFeature()
-        tmp_feature.setGeometry(QgsGeometry.fromPointXY(tmp_point))
-        tmp_provider.addFeature(tmp_feature)
-
         node_idx = i * n_cols + j
 
         fid_to_node[feat.id()] = node_idx
         terminal_fids.append(feat.id())
-    
-    tmp_layer.updateExtents()
-    # Добавляем слой в проект QGIS
-    QgsProject.instance().addMapLayer(tmp_layer)
 
     lcp_layer_path = os.path.join(project_folder, "output_least_cost_path.gpkg")
     lcp_layer = build_output_least_cost_path(lcp_layer_path)
