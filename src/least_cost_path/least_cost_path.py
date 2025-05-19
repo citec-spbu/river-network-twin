@@ -98,6 +98,8 @@ def least_cost_path_analysis(project_folder):
         pt3857 = coord_transform.transform(pt)
 
         i, j = nearest_land(pt3857.x(), pt3857.y(), gt, n_rows, n_cols, arr_water, 2)
+        if i == -1 or j == -1:
+            continue
         node_idx = i * n_cols + j
 
         feature = QgsFeature()
@@ -321,8 +323,6 @@ def coord_to_pixel(x, y, gt, n_rows, n_cols):
     i_float = inv * (-gt[4] * (x - gt[0]) + gt[1] * (y - gt[3]))
     i = int(i_float)
     j = int(j_float)
-    i = min(max(i, 0), n_rows - 1)
-    j = min(max(j, 0), n_cols - 1)
     return i, j
 
 
@@ -333,13 +333,14 @@ def pixel_to_coord(i, j, gt):
 
 def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
     i, j = coord_to_pixel(x, y, gt, n_rows, n_cols)
+    if not 0 <= i < n_rows or not 0 <= j < n_cols:
+        print(f"({i}, {j})", flush=True)
+        return -1, -1
     l, r = max(0, i - radius), min(i + radius + 1, n_rows)
     t, b = max(0, j - radius), min(j + radius + 1, n_cols)
 
     point = (i, j)
     sqr_distance = -1
-
-    print(f"({i}, {j}): {l} {r} {t} {b}", flush=True)
 
     for u in range(l, r):
         for v in range(t, b):
