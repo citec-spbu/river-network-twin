@@ -8,6 +8,7 @@ from qgis.core import (
     QgsGeometry,
     QgsSpatialIndex,
     QgsRasterLayer,
+    QgsVectorLayer,
     QgsFeature,
     QgsCoordinateTransform,
     QgsCoordinateReferenceSystem,
@@ -81,6 +82,13 @@ def least_cost_path_analysis(project_folder):
 
     fid_to_node = {}
     terminal_fids = []
+    ds_water = gdal.Open(water_rasterized)
+    arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
+    nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
+    if nodata_water is not None:
+        arr_water[arr_water == nodata_water] = 0 
+    sources_layer = QgsVectorLayer("Point?crs=EPSG:3857", "Moved sources", "memory")
+    sources_provider = sources_layer.dataProvider()
     for feat in points_layer.getFeatures():
         z = feat["z"]
         if z is None:
@@ -88,11 +96,21 @@ def least_cost_path_analysis(project_folder):
 
         pt = feat.geometry().asPoint()
         pt3857 = coord_transform.transform(pt)
-        i, j = coord_to_pixel(pt3857.x(), pt3857.y(), gt, n_rows, n_cols)
+
+        i, j = nearest_land(pt3857.x(), pt3857.y(), gt, n_rows, n_cols, arr_water, 2)
         node_idx = i * n_cols + j
+
+        feature = QgsFeature()
+        point = QgsPointXY(*pixel_to_coord(i, j, gt))
+        feature.setGeometry(QgsGeometry.fromPointXY(point))  # QGIS использует (x, y) = (longitude, latitude)
+        sources_provider.addFeature(feature)
 
         fid_to_node[feat.id()] = node_idx
         terminal_fids.append(feat.id())
+    
+    sources_layer.updateExtents()
+    QgsProject.instance().addMapLayer(sources_layer)
+    arr_water = None
 
     lcp_layer_path = os.path.join(project_folder, "output_least_cost_path.gpkg")
     lcp_layer = build_output_least_cost_path(lcp_layer_path)
@@ -301,8 +319,8 @@ def coord_to_pixel(x, y, gt, n_rows, n_cols):
     inv = 1.0 / (gt[1] * gt[5] - gt[2] * gt[4])
     j_float = inv * (gt[5] * (x - gt[0]) - gt[2] * (y - gt[3]))
     i_float = inv * (-gt[4] * (x - gt[0]) + gt[1] * (y - gt[3]))
-    i = int(round(i_float))
-    j = int(round(j_float))
+    i = int(i_float)
+    j = int(j_float)
     i = min(max(i, 0), n_rows - 1)
     j = min(max(j, 0), n_cols - 1)
     return i, j
@@ -312,3 +330,24 @@ def pixel_to_coord(i, j, gt):
     x = gt[0] + (j + 0.5) * gt[1] + (i + 0.5) * gt[2]
     y = gt[3] + (j + 0.5) * gt[4] + (i + 0.5) * gt[5]
     return x, y
+
+def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
+    i, j = coord_to_pixel(x, y, gt, n_rows, n_cols)
+    l, r = max(0, i - radius), min(i + radius + 1, n_rows)
+    t, b = max(0, j - radius), min(j + radius + 1, n_cols)
+
+    point = (i, j)
+    sqr_distance = -1
+
+    print(f"({i}, {j}): {l} {r} {t} {b}", flush=True)
+
+    for u in range(l, r):
+        for v in range(t, b):
+            if water[u, v] == 0:
+                u_c, v_c = pixel_to_coord(u, v, gt)
+                dist = (x - u_c)**2 + (y - v_c)**2
+                if sqr_distance > dist or sqr_distance == -1:
+                    point = (u, v)
+                    sqr_distance = dist
+    
+    return point
