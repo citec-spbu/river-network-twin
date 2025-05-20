@@ -12,6 +12,7 @@ from qgis.core import (
     QgsFeature,
     QgsCoordinateTransform,
     QgsCoordinateReferenceSystem,
+    QgsVectorFileWriter,
 )
 from qgis.PyQt.QtWidgets import QMessageBox
 import networkit as nk
@@ -104,13 +105,27 @@ def least_cost_path_analysis(project_folder):
 
         feature = QgsFeature()
         point = QgsPointXY(*pixel_to_coord(i, j, gt))
-        feature.setGeometry(QgsGeometry.fromPointXY(point))  # QGIS использует (x, y) = (longitude, latitude)
+        feature.setGeometry(QgsGeometry.fromPointXY(point))
         sources_provider.addFeature(feature)
 
         fid_to_node[feat.id()] = node_idx
         terminal_fids.append(feat.id())
     
     sources_layer.updateExtents()
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.layerName = "Изолинии"
+    options.driverName = "GPKG"
+    QgsVectorFileWriter.writeAsVectorFormat(
+        sources_layer, 
+        f"{project_folder}/moved_sources.gpkg", 
+        options
+    )
+    # Загрузка слоя
+    sources_layer = QgsVectorLayer(
+        f"{project_folder}/moved_sources.gpkg", 
+        "Moved sources", 
+        "ogr"
+    )
     QgsProject.instance().addMapLayer(sources_layer)
     arr_water = None
 
