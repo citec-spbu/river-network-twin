@@ -8,13 +8,16 @@ from qgis.core import (
     QgsGeometry,
     QgsSpatialIndex,
     QgsRasterLayer,
+    QgsVectorLayer,
     QgsFeature,
     QgsCoordinateTransform,
     QgsCoordinateReferenceSystem,
+    QgsVectorFileWriter,
 )
 from qgis.PyQt.QtWidgets import QMessageBox
 import networkit as nk
 from osgeo import gdal
+from src.river.layers.water_rasterized import build_water_rasterized
 
 
 def least_cost_path_analysis(project_folder):
@@ -62,13 +65,36 @@ def least_cost_path_analysis(project_folder):
         )
         return
 
+    water_rasterized = build_water_rasterized(
+        f"{project_folder}/merge_result.gpkg",
+        QgsProject.instance().mapLayersByName("water")[0].source(),
+        cost_layer.source(),
+        f"{project_folder}/water_rasterized.tif",
+        0.001,
+    )
+    raster_layer = QgsRasterLayer(water_rasterized, "water_rasterized")
+    if raster_layer.isValid():
+        QgsProject.instance().addMapLayer(raster_layer)
+    else:
+        QMessageBox.warning(
+            None, "Ошибка", "Не удалось загрузить растеризованный слой воды."
+        )
+        return
+
     t_paths_start = time.perf_counter()
 
     # строим граф из cost_layer
-    G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source())
+    G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source(), water_rasterized)
 
     fid_to_node = {}
     terminal_fids = []
+    ds_water = gdal.Open(water_rasterized)
+    arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
+    nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
+    if nodata_water is not None:
+        arr_water[arr_water == nodata_water] = 0
+    sources_layer = QgsVectorLayer("Point?crs=EPSG:3857", "Moved sources", "memory")
+    sources_provider = sources_layer.dataProvider()
     for feat in points_layer.getFeatures():
         z = feat["z"]
         if z is None:
@@ -76,11 +102,33 @@ def least_cost_path_analysis(project_folder):
 
         pt = feat.geometry().asPoint()
         pt3857 = coord_transform.transform(pt)
-        i, j = coord_to_pixel(pt3857.x(), pt3857.y(), gt, n_rows, n_cols)
+
+        i, j = nearest_land(pt3857.x(), pt3857.y(), gt, n_rows, n_cols, arr_water, 2)
+        if i == -1 or j == -1:
+            continue
         node_idx = i * n_cols + j
+
+        feature = QgsFeature()
+        point = QgsPointXY(*pixel_to_coord(i, j, gt))
+        feature.setGeometry(QgsGeometry.fromPointXY(point))
+        sources_provider.addFeature(feature)
 
         fid_to_node[feat.id()] = node_idx
         terminal_fids.append(feat.id())
+
+    sources_layer.updateExtents()
+    options = QgsVectorFileWriter.SaveVectorOptions()
+    options.layerName = "Изолинии"
+    options.driverName = "GPKG"
+    QgsVectorFileWriter.writeAsVectorFormat(
+        sources_layer, f"{project_folder}/moved_sources.gpkg", options
+    )
+    # Загрузка слоя
+    sources_layer = QgsVectorLayer(
+        f"{project_folder}/moved_sources.gpkg", "Moved sources", "ogr"
+    )
+    QgsProject.instance().addMapLayer(sources_layer)
+    arr_water = None
 
     lcp_layer_path = os.path.join(project_folder, "output_least_cost_path.gpkg")
     lcp_layer = build_output_least_cost_path(lcp_layer_path)
@@ -244,20 +292,21 @@ def least_cost_path_analysis(project_folder):
     )
 
 
-def build_cost_graph(raster_path, eps=1e-6):
-    ds = gdal.Open(raster_path)
-    arr = ds.GetRasterBand(1).ReadAsArray().astype(float)
+def build_cost_graph(raster_path, water_layer, eps=1e-6):
+    ds_cost = gdal.Open(raster_path)
+    arr = ds_cost.GetRasterBand(1).ReadAsArray().astype(float)
+    ds_water = gdal.Open(water_layer)
+    arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
+    nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
+    if nodata_water is not None:
+        arr_water[arr_water == nodata_water] = 0
     rows, cols = arr.shape
     G = nk.Graph(rows * cols, weighted=True, directed=False)
 
-    # все 8 направлений: 4 ортогональных + 4 диагональных
+    # 4 направления от вниз-влево до вправо
     neigh = [
-        (-1, 0, 1.0),  # вверх
         (1, 0, 1.0),  # вниз
-        (0, -1, 1.0),  # влево
         (0, 1, 1.0),  # вправо
-        (-1, -1, math.sqrt(2)),  # диагонали
-        (-1, 1, math.sqrt(2)),
         (1, -1, math.sqrt(2)),
         (1, 1, math.sqrt(2)),
     ]
@@ -269,15 +318,18 @@ def build_cost_graph(raster_path, eps=1e-6):
         for j in range(cols):
             u = nid(i, j)
             hu = arr[i, j]
+            if arr_water[i, j] != 0:
+                continue
             for di, dj, factor in neigh:
                 ni, nj = i + di, j + dj
                 if 0 <= ni < rows and 0 <= nj < cols:
                     hv = arr[ni, nj]
                     dh = abs(hu - hv)
                     w = factor * (dh + eps)
-                    G.addEdge(u, nid(ni, nj), w)
+                    if arr_water[ni, nj] == 0:
+                        G.addEdge(u, nid(ni, nj), w)
 
-    gt = ds.GetGeoTransform()
+    gt = ds_cost.GetGeoTransform()
     return G, gt, rows, cols
 
 
@@ -285,14 +337,35 @@ def coord_to_pixel(x, y, gt, n_rows, n_cols):
     inv = 1.0 / (gt[1] * gt[5] - gt[2] * gt[4])
     j_float = inv * (gt[5] * (x - gt[0]) - gt[2] * (y - gt[3]))
     i_float = inv * (-gt[4] * (x - gt[0]) + gt[1] * (y - gt[3]))
-    i = int(round(i_float))
-    j = int(round(j_float))
-    i = min(max(i, 0), n_rows - 1)
-    j = min(max(j, 0), n_cols - 1)
+    i = int(i_float)
+    j = int(j_float)
     return i, j
 
 
 def pixel_to_coord(i, j, gt):
-    x = gt[0] + j * gt[1] + i * gt[2]
-    y = gt[3] + j * gt[4] + i * gt[5]
+    x = gt[0] + (j + 0.5) * gt[1] + (i + 0.5) * gt[2]
+    y = gt[3] + (j + 0.5) * gt[4] + (i + 0.5) * gt[5]
     return x, y
+
+
+def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
+    i, j = coord_to_pixel(x, y, gt, n_rows, n_cols)
+    if not 0 <= i < n_rows or not 0 <= j < n_cols:
+        print(f"({i}, {j})", flush=True)
+        return -1, -1
+    l, r = max(0, i - radius), min(i + radius + 1, n_rows)
+    t, b = max(0, j - radius), min(j + radius + 1, n_cols)
+
+    point = (i, j)
+    sqr_distance = -1
+
+    for u in range(l, r):
+        for v in range(t, b):
+            if water[u, v] == 0:
+                u_c, v_c = pixel_to_coord(u, v, gt)
+                dist = (x - u_c) ** 2 + (y - v_c) ** 2
+                if sqr_distance > dist or sqr_distance == -1:
+                    point = (u, v)
+                    sqr_distance = dist
+
+    return point
