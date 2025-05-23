@@ -70,7 +70,7 @@ def build_water_rasterized(
             "UNITS": 0,
             "WIDTH": width,
             "HEIGHT": height,
-            "EXTENT": None,
+            "EXTENT": dem_path,
             "NODATA": 0,
             "OPTIONS": None,
             "DATA_TYPE": 5,

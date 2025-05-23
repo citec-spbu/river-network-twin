@@ -64,9 +64,14 @@ def least_cost_path_analysis(project_folder):
             None, "Ошибка", "Не удалось загрузить перепроецированный DEM."
         )
         return
-    
 
-    water_rasterized = build_water_rasterized(f"{project_folder}/merge_result.gpkg", QgsProject.instance().mapLayersByName("water")[0], cost_layer.source(), f"{project_folder}/water_rasterized.tif", 0.001)
+    water_rasterized = build_water_rasterized(
+        f"{project_folder}/merge_result.gpkg",
+        QgsProject.instance().mapLayersByName("water")[0].source(),
+        cost_layer.source(),
+        f"{project_folder}/water_rasterized.tif",
+        0.001,
+    )
     raster_layer = QgsRasterLayer(water_rasterized, "water_rasterized")
     if raster_layer.isValid():
         QgsProject.instance().addMapLayer(raster_layer)
@@ -87,7 +92,7 @@ def least_cost_path_analysis(project_folder):
     arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
     nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
     if nodata_water is not None:
-        arr_water[arr_water == nodata_water] = 0 
+        arr_water[arr_water == nodata_water] = 0
     sources_layer = QgsVectorLayer("Point?crs=EPSG:3857", "Moved sources", "memory")
     sources_provider = sources_layer.dataProvider()
     for feat in points_layer.getFeatures():
@@ -110,21 +115,17 @@ def least_cost_path_analysis(project_folder):
 
         fid_to_node[feat.id()] = node_idx
         terminal_fids.append(feat.id())
-    
+
     sources_layer.updateExtents()
     options = QgsVectorFileWriter.SaveVectorOptions()
     options.layerName = "Изолинии"
     options.driverName = "GPKG"
     QgsVectorFileWriter.writeAsVectorFormat(
-        sources_layer, 
-        f"{project_folder}/moved_sources.gpkg", 
-        options
+        sources_layer, f"{project_folder}/moved_sources.gpkg", options
     )
     # Загрузка слоя
     sources_layer = QgsVectorLayer(
-        f"{project_folder}/moved_sources.gpkg", 
-        "Moved sources", 
-        "ogr"
+        f"{project_folder}/moved_sources.gpkg", "Moved sources", "ogr"
     )
     QgsProject.instance().addMapLayer(sources_layer)
     arr_water = None
@@ -298,7 +299,7 @@ def build_cost_graph(raster_path, water_layer, eps=1e-6):
     arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
     nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
     if nodata_water is not None:
-        arr_water[arr_water == nodata_water] = 0 
+        arr_water[arr_water == nodata_water] = 0
     rows, cols = arr.shape
     G = nk.Graph(rows * cols, weighted=True, directed=False)
 
@@ -346,6 +347,7 @@ def pixel_to_coord(i, j, gt):
     y = gt[3] + (j + 0.5) * gt[4] + (i + 0.5) * gt[5]
     return x, y
 
+
 def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
     i, j = coord_to_pixel(x, y, gt, n_rows, n_cols)
     if not 0 <= i < n_rows or not 0 <= j < n_cols:
@@ -361,9 +363,9 @@ def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
         for v in range(t, b):
             if water[u, v] == 0:
                 u_c, v_c = pixel_to_coord(u, v, gt)
-                dist = (x - u_c)**2 + (y - v_c)**2
+                dist = (x - u_c) ** 2 + (y - v_c) ** 2
                 if sqr_distance > dist or sqr_distance == -1:
                     point = (u, v)
                     sqr_distance = dist
-    
+
     return point
