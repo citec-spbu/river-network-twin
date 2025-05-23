@@ -1,6 +1,7 @@
 import os
 import math
 from .common import add_dem_layer, get_main_def
+from .progress_manager import ProgressManager
 
 import numpy as np
 import processing
@@ -73,6 +74,8 @@ def clip_dem_with_polygon(
     """
     Создает буфер вокруг полигона и обрезает DEM по этому буферу.
     """
+    if not progress.update(10, "Создание буфера..."):
+        return None
     # Параметры буфера
     buffer_distance = 100  # Задайте отступ в метрах или единицах CRS маски
     buffered_mask = os.path.join(project_folder, "buffered_mask.shp")
@@ -93,6 +96,8 @@ def clip_dem_with_polygon(
     )
     print(f"Буфер сохранен в: {buffered_mask}", flush=True)
 
+    if not progress.update(20, "Обрезка DEM..."):
+        return None
     # Используем инструмент GDAL для обрезки DEM с использованием полигона
     processing.run(
         "gdal:cliprasterbymasklayer",
@@ -121,8 +126,13 @@ def handle_points_collection(
         print("Для создания полигона необходимо выбрать хотя бы 3 точки.", flush=True)
         return
 
+    if not progress.update(10, "Создание полигона..."):
+        return
+
     polygon = create_polygon_from_points(selected_points)
     polygon_layer = add_polygon_to_layer(polygon)
+    if not progress.update(20, "Обрезка DEM..."):
+        return
     clip_dem_with_polygon(
         dem_layer, polygon_layer, masked_dem_output_path, project_folder
     )
@@ -184,6 +194,8 @@ def process_dem_with_polygon(
 
 def reproject_dem2(project_folder):
     # Репроекция DEM из EPSG:4326 в EPSG:3857
+    if not progress.update(10, "Репроекция DEM..."):
+        return None
     output_reprojected_path = os.path.join(project_folder, "reprojected_dem.tif")
     output_path = os.path.join(project_folder, "masked_dem.tif")
     reprojected_dem = processing.run(
@@ -210,6 +222,8 @@ def load_dem_to_numpy(project_folder):
     """
     Загружает DEM из файла в numpy-массив.
     """
+    if not progress.update(5, "Загрузка DEM..."):
+        return None, None
     input_path = os.path.join(project_folder, "masked_dem.tif")
     dem_raster = gdal.Open(input_path)
     dem_band = dem_raster.GetRasterBand(1)
@@ -221,6 +235,8 @@ def setting_dem_coordinates(dem_data, dem_raster):
     """
     Находит максимальные и минимальные высоты, а также вычисляет географические координаты этих точек.
     """
+    if not progress.update(10, "Анализ высот..."):
+        return None, None, None
     max_height = np.max(dem_data)
     min_height = np.min(dem_data)
 
@@ -260,6 +276,8 @@ def create_temp_vector_layer():
     """
     Создает временный векторный слой для точек и добавляет его в проект.
     """
+    if not progress.update(5, "Создание слоя..."):
+        return None
     layer = QgsVectorLayer("Point?crs=EPSG:3857", "points1", "memory")
     QgsProject.instance().addMapLayer(layer)
     return layer
@@ -269,6 +287,8 @@ def set_attribute_fields(layer):
     """
     Добавляет в слой поле 'ID' для хранения идентификатора точки.
     """
+    if not progress.update(5, "Настройка атрибутов..."):
+        return None
     fields = QgsFields()
     fields.append(QgsField("ID", QVariant.Int))
 
@@ -281,6 +301,8 @@ def add_points(coordinates, layer):
     """
     Добавляет точки с заданными координатами в слой.
     """
+    if not progress.update(10, "Добавление точек..."):
+        return
     features = []
     for i, (x, y) in enumerate(coordinates, start=1):
         feat = QgsFeature()
@@ -299,6 +321,8 @@ def create_points(project_folder):
     """
     dem_path = os.path.join(project_folder, "masked_dem.tif")
     add_dem_layer(dem_path)
+    if not progress.update(30, "Создание точек высот..."):
+        return
     reprojected_dem_mask = reproject_dem2(project_folder)
     dem_data, dem_raster = load_dem_to_numpy(project_folder)
     coordinates, min_height, max_height = setting_dem_coordinates(dem_data, dem_raster)
@@ -323,6 +347,8 @@ def construct_isolines(reprojected_dem_mask, hop, max_height, project_folder):
     """
     Создает изолинии DEM с заданным шагом.
     """
+    if not progress.update(20, "Создание изолиний..."):
+        return None, None
     contours_output_path = os.path.join(project_folder, "contours_output.shp")
     try:
         result = processing.run(
@@ -348,6 +374,8 @@ def add_isolines_to_a_layer(contours_output_path, result):
     """
     Загружает слой изолиний, проверяет корректность и добавляет его в проект.
     """
+    if not progress.update(10, "Добавление изолиний..."):
+        return None
     contours_output_path = result["OUTPUT"]
     print(f"Временный файл изолиний создан: {contours_output_path}", flush=True)
 
@@ -370,6 +398,8 @@ def filter_isoline(contours_layer):
     """
     Создает временный слой для фильтрации изолиний по высотному диапазону.
     """
+    if not progress.update(10, "Фильтрация изолиний..."):
+        return None, None
     # Фильтрация изолиний по диапазону высот
     filtered_layer = QgsVectorLayer(
         "LineString?crs=EPSG:3857", "Filtered Contours", "memory"
@@ -389,6 +419,14 @@ def adding_isolines_by_height(
     Добавляет в новый слой только те изолинии, высота которых попадает в заданный диапазон.
     """
     for feature in contours_layer.getFeatures():
+        if progress.was_canceled():
+            return
+
+        processed += 1
+        if not progress.update(10 + int(30 * processed / total_features),
+                               f"Фильтрация {processed}/{total_features}"):
+            return
+
         elevation = feature["ELEV"]
         if min_height <= elevation <= max_height:  # Диапазон высот
             filtered_provider.addFeatures(
@@ -403,6 +441,8 @@ def create_isolines(reprojected_dem_mask, min_height, max_height, project_folder
     """
     Объединяет шаг вычисления, создание и фильтрацию изолиний.
     """
+    if not progress.update(50, "Создание изолиний..."):
+        return
     H = 15  # Высота лесополосы
     J = 20  # Коэффициент влияния
     angle = 3  # Угол наклона в градусах
@@ -423,6 +463,8 @@ def add_forests_layer():
     """
     Создает временный слой для лесополос и добавляет поле 'Step'.
     """
+    if not progress.update(5, "Создание слоя лесополос..."):
+        return None, None
     forest_layer = QgsVectorLayer(
         "LineString?crs=EPSG:3857", "Forest Belts", "memory"
     )  # Совместимый CRS
@@ -479,6 +521,14 @@ def add_forest_feature(filtered_layer, forest_provider, forest_layer, colors):
     categories = []  # Список категорий для рендера
     # Добавление лесополос
     for feature in filtered_layer.getFeatures():
+        if progress.was_canceled():
+            return None
+
+        processed += 1
+        if not progress.update(10 + int(30 * processed / total_features),
+                               f"Добавление {processed}/{total_features}"):
+            return None
+
         geometry = feature.geometry()
         if not geometry.isEmpty():
             forest_feature = QgsFeature()
@@ -502,6 +552,8 @@ def config_render(forest_layer, categories):
     """
     Настраивает категориальный рендерер для слоя лесополос и добавляет слой в проект.
     """
+    if not progress.update(10, "Настройка отображения..."):
+        return
     renderer = QgsCategorizedSymbolRenderer("Step", categories)
     forest_layer.setRenderer(renderer)
     forest_layer.updateExtents()  # Обновляем границы слоя
@@ -601,12 +653,17 @@ def generate_forest_belts_layer(
     """
     Генерирует слой лесополос из отфильтрованных изолиний и настраивает рендеринг.
     """
+    if not progress.update(70, "Генерация лесополос..."):
+        return
     forest_layer, forest_provider = add_forests_layer()
     colors = generate_color_pallete()
     categories = add_forest_feature(
         filtered_layer, forest_provider, forest_layer, colors
     )
     config_render(forest_layer, categories)
+    progress.update(100, "Завершено!")
+    print("Лесополосы успешно созданы.", flush=True)
+    progress.finish()
     forest_layer, selected_region_layer = check_forest_layers()
     boundary_layer = create_boundary_layer(selected_region_layer)
     categories, step_index, unique_steps = setting_up_render(forest_layer)
