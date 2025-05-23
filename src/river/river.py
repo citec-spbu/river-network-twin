@@ -1,6 +1,6 @@
 import os
 from typing import List, Optional
-from ..common import (
+from src.common import (
     add_dem_layer,
     add_opentopo_layer,
     download_dem,
@@ -26,12 +26,12 @@ from qgis.PyQt.QtWidgets import QMessageBox, QInputDialog
 from qgis.utils import iface
 from .point_selection_tool import PointSelectionTool
 from .layers.rivers_by_object_filtered import build_rivers_by_object_filtered
-from ..river.layers.max_height_points import build_max_height_points
-from ..river.layers.basins import build_basins_layer
-from ..river.layers.rivers_and_points import build_rivers_and_points_layer
-from ..river.layers.rivers_merged import build_merged_layer
-from ..river.layers.utils import load_quickosm_layer
-from ..river.layers.clustering import assign_clusters, preparing_data_for_clustering
+from .layers.max_height_points import build_max_height_points
+from .layers.basins import build_basins_layer
+from .layers.rivers_and_points import build_rivers_and_points_layer
+from .layers.rivers_merged import build_merged_layer
+from .layers.utils import load_quickosm_layer
+from .layers.clustering import assign_clusters, preparing_data_for_clustering
 
 RIVER_FILTERS = {
     "max_strahler_order": (">=", 2),

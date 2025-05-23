@@ -17,7 +17,7 @@ from qgis.core import (
 from qgis.PyQt.QtWidgets import QMessageBox
 import networkit as nk
 from osgeo import gdal
-from ...src.river.layers.water_rasterized import build_water_rasterized
+from src.river.layers.water_rasterized import build_water_rasterized
 
 
 def least_cost_path_analysis(project_folder):
