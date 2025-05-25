@@ -1,6 +1,6 @@
 import processing
 from qgis.core import QgsVectorLayer
-from ...river.layers.utils import load_quickosm_layer
+from .utils import load_quickosm_layer
 
 
 def build_merged_layer(
