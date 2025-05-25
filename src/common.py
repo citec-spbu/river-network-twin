@@ -1,16 +1,17 @@
 import os
 from typing import Any
-import requests
+
 import processing
-from qgis.core import (
-    QgsProject,
-    QgsCoordinateReferenceSystem,
-    QgsRasterLayer,
-    QgsApplication,
-)
-from qgis.analysis import QgsNativeAlgorithms
-from qgis.PyQt.QtWidgets import QInputDialog, QMessageBox
+import requests
 from pyproj import Transformer
+from qgis.analysis import QgsNativeAlgorithms
+from qgis.core import (
+    QgsApplication,
+    QgsCoordinateReferenceSystem,
+    QgsProject,
+    QgsRasterLayer,
+)
+from qgis.PyQt.QtWidgets import QInputDialog, QMessageBox
 
 
 def set_project_crs():
@@ -45,20 +46,32 @@ def get_coordinates():
     x_3857, y_3857 = 4316873, 7711643
     """
     x, ok_x = QInputDialog.getDouble(
-        None, "Координата X", "Введите координату X:", value=4316873, decimals=6
+        None,
+        "Координата X",
+        "Введите координату X:",
+        value=4316873,
+        decimals=6,
     )
     if not ok_x:
         QMessageBox.warning(
-            None, "Ошибка", "Неправильная координата X. Работа плагина прекращена."
+            None,
+            "Ошибка",
+            "Неправильная координата X. Работа плагина прекращена.",
         )
         return None, None
 
     y, ok_y = QInputDialog.getDouble(
-        None, "Координата Y", "Введите координату Y:", value=7711643, decimals=6
+        None,
+        "Координата Y",
+        "Введите координату Y:",
+        value=7711643,
+        decimals=6,
     )
     if not ok_y:
         QMessageBox.warning(
-            None, "Ошибка", "Неправильная координата Y. Работа плагина прекращена."
+            None,
+            "Ошибка",
+            "Неправильная координата Y. Работа плагина прекращена.",
         )
         return None, None
 
@@ -141,7 +154,7 @@ def get_main_def(project_folder) -> Any:
 
     x, y = get_coordinates()
     if x is None or y is None:
-        return
+        return None
 
     longitude, latitude = transform_coordinates(x, y)
     bbox = [longitude - 0.5, latitude - 0.5, longitude + 0.5, latitude + 0.5]

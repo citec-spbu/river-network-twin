@@ -1,6 +1,22 @@
 import os
 from typing import List, Optional
-from src.common import (
+
+import processing
+from qgis.core import (
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsFeature,
+    QgsField,
+    QgsGeometry,
+    QgsPointXY,
+    QgsProject,
+    QgsRaster,
+)
+from qgis.PyQt.QtCore import QEventLoop, QVariant
+from qgis.PyQt.QtWidgets import QInputDialog, QMessageBox
+from qgis.utils import iface
+
+from ..common import (
     add_dem_layer,
     add_opentopo_layer,
     download_dem,
@@ -10,28 +26,14 @@ from src.common import (
     set_project_crs,
     transform_coordinates,
 )
-import processing
-from qgis.core import (
-    QgsProject,
-    QgsCoordinateReferenceSystem,
-    QgsCoordinateTransform,
-    QgsPointXY,
-    QgsGeometry,
-    QgsField,
-    QgsRaster,
-    QgsFeature,
-)
-from qgis.PyQt.QtCore import QVariant, QEventLoop
-from qgis.PyQt.QtWidgets import QMessageBox, QInputDialog
-from qgis.utils import iface
-from .point_selection_tool import PointSelectionTool
+from ..river.layers.basins import build_basins_layer
+from ..river.layers.clustering import assign_clusters, preparing_data_for_clustering
+from ..river.layers.max_height_points import build_max_height_points
+from ..river.layers.rivers_and_points import build_rivers_and_points_layer
+from ..river.layers.rivers_merged import build_merged_layer
+from ..river.layers.utils import load_quickosm_layer
 from .layers.rivers_by_object_filtered import build_rivers_by_object_filtered
-from .layers.max_height_points import build_max_height_points
-from .layers.basins import build_basins_layer
-from .layers.rivers_and_points import build_rivers_and_points_layer
-from .layers.rivers_merged import build_merged_layer
-from .layers.utils import load_quickosm_layer
-from .layers.clustering import assign_clusters, preparing_data_for_clustering
+from .point_selection_tool import PointSelectionTool
 
 RIVER_FILTERS = {
     "max_strahler_order": (">=", 2),
@@ -161,7 +163,7 @@ def river(project_folder):
     # Добавить новые поля для хранения высотных данных
     layer_provider = end_y.dataProvider()
     layer_provider.addAttributes(
-        [QgsField("start_z", QVariant.Double), QgsField("end_z", QVariant.Double)]
+        [QgsField("start_z", QVariant.Double), QgsField("end_z", QVariant.Double)],
     )
     end_y.updateFields()
     idx_start_z = layer_provider.fields().indexOf("start_z")
@@ -173,21 +175,22 @@ def river(project_folder):
     changes = {}
     for feature in end_y.getFeatures():
         geom = feature.geometry()
-        if geom.isMultipart():
-            polyline = geom.asMultiPolyline()[0]
-        else:
-            polyline = geom.asPolyline()
+        polyline = (
+            geom.asMultiPolyline()[0] if geom.isMultipart() else geom.asPolyline()
+        )
 
         start_point = QgsPointXY(polyline[0])
         end_point = QgsPointXY(polyline[-1])
 
         # Высотные данные начальной точки
         start_z = dem_layer.dataProvider().identify(
-            start_point, QgsRaster.IdentifyFormatValue
+            start_point,
+            QgsRaster.IdentifyFormatValue,
         )
         # Высотные данные конечной точки
         end_z = dem_layer.dataProvider().identify(
-            end_point, QgsRaster.IdentifyFormatValue
+            end_point,
+            QgsRaster.IdentifyFormatValue,
         )
 
         start_z_value = None
@@ -208,10 +211,13 @@ def river(project_folder):
 
     # Добавим слой рек, где объекты - сами реки, а не сегменты.
     rivers_by_object_filtered_path = os.path.join(
-        project_folder, "rivers_by_object_filtered.gpkg"
+        project_folder,
+        "rivers_by_object_filtered.gpkg",
     )
     rivers_by_object_filtered = build_rivers_by_object_filtered(
-        end_y, RIVER_FILTERS, rivers_by_object_filtered_path
+        end_y,
+        RIVER_FILTERS,
+        rivers_by_object_filtered_path,
     )
     QgsProject.instance().addMapLayer(rivers_by_object_filtered)
 
@@ -252,53 +258,56 @@ def river(project_folder):
             and sy is not None
             and start_z is not None
             and start_z == max_z
-        ):
-            if (sx, sy) not in end_points:
-                pt = QgsPointXY(sx, sy)
-                new_feat = QgsFeature()
-                new_feat.setFields(fields)
-                new_feat.setGeometry(QgsGeometry.fromPointXY(pt))
-                new_feat["x"] = sx
-                new_feat["y"] = sy
-                new_feat["z"] = start_z
-                point_layer.addFeature(new_feat)
+        ) and (
+            sx,
+            sy,
+        ) not in end_points:
+            pt = QgsPointXY(sx, sy)
+            new_feat = QgsFeature()
+            new_feat.setFields(fields)
+            new_feat.setGeometry(QgsGeometry.fromPointXY(pt))
+            new_feat["x"] = sx
+            new_feat["y"] = sy
+            new_feat["z"] = start_z
+            point_layer.addFeature(new_feat)
 
         # Проверка конечной точки
-        if ex is not None and ey is not None and end_z is not None and end_z == max_z:
-            if (ex, ey) not in start_points:
-                pt = QgsPointXY(ex, ey)
-                new_feat = QgsFeature()
-                new_feat.setFields(fields)
-                new_feat.setGeometry(QgsGeometry.fromPointXY(pt))
-                new_feat["x"] = ex
-                new_feat["y"] = ey
-                new_feat["z"] = end_z
-                point_layer.addFeature(new_feat)
+        if (
+            ex is not None
+            and ey is not None
+            and end_z is not None
+            and end_z == max_z
+            and (ex, ey) not in start_points
+        ):
+            pt = QgsPointXY(ex, ey)
+            new_feat = QgsFeature()
+            new_feat.setFields(fields)
+            new_feat.setGeometry(QgsGeometry.fromPointXY(pt))
+            new_feat["x"] = ex
+            new_feat["y"] = ey
+            new_feat["z"] = end_z
+            point_layer.addFeature(new_feat)
 
     # Завершение редактирования и сохранение изменений
     point_layer.commitChanges(True)
     QgsProject.instance().addMapLayer(point_layer)
     # Добавление слоёв кластеризации
     copied_point_layer = point_layer.clone()
-    data_for_clustering_path = os.path.join(
-        project_folder, "Изолинии.gpkg"
-    )
+    data_for_clustering_path = os.path.join(project_folder, "Изолинии.gpkg")
     data_for_clustering = preparing_data_for_clustering(
-        copied_point_layer, 
+        copied_point_layer,
         dem_layer,
         RESAMPLE_SCALE,
         CONTOUR_INTERVAL,
-        data_for_clustering_path
+        data_for_clustering_path,
     )
     QgsProject.instance().addMapLayer(data_for_clustering)
-    
-    points_and_clusters_path = os.path.join(
-        project_folder, "Points_and_clusters.gpkg"
-    )    
+
+    points_and_clusters_path = os.path.join(project_folder, "Points_and_clusters.gpkg")
     points_and_clusters = assign_clusters(
-        data_for_clustering, 
-        copied_point_layer, 
-        points_and_clusters_path
+        data_for_clustering,
+        copied_point_layer,
+        points_and_clusters_path,
     )
     QgsProject.instance().addMapLayer(points_and_clusters)
 
@@ -335,7 +344,7 @@ def select_analysis_bbox() -> Optional[List[float]]:
         lon, lat = transform_coordinates(x, y)
         return [lon - radius, lat - radius, lon + radius, lat + radius]
 
-    elif method == "Область по 4 точкам":
+    if method == "Область по 4 точкам":
         canvas = iface.mapCanvas()
         tool = PointSelectionTool(canvas)
         canvas.setMapTool(tool)
