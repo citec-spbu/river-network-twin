@@ -1,20 +1,22 @@
-import os
 import glob
+import os
+
 from qgis.core import QgsProject
 from qgis.PyQt.QtWidgets import (
-    QFileDialog,
-    QMessageBox,
     QAction,
-    QPushButton,
-    QDialog,
-    QVBoxLayout,
-    QLabel,
     QCheckBox,
+    QDialog,
+    QFileDialog,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
 )
 from qgis.utils import iface
-from .river.river import river
-from .least_cost_path.least_cost_path import least_cost_path_analysis
+
 from .forest import forest
+from .least_cost_path.least_cost_path import least_cost_path_analysis
+from .river.river import river
 from .custom_path import CustomPathBuilder
 
 class CustomDEMPlugin:
@@ -45,7 +47,9 @@ class CustomDEMPlugin:
         folder = QFileDialog.getExistingDirectory(None, "Выберите рабочую папку")
         if not folder:
             QMessageBox.warning(
-                None, "Ошибка", "Рабочая папка не выбрана. Работа плагина прекращена."
+                None,
+                "Ошибка",
+                "Рабочая папка не выбрана. Работа плагина прекращена.",
             )
             return
 
@@ -80,7 +84,7 @@ class CustomDEMPlugin:
             if layer_tree_node:  # Проверка наличия слоя в дереве
                 checkbox = QCheckBox(layer.name())
                 checkbox.setChecked(
-                    layer_tree_node.isVisible()
+                    layer_tree_node.isVisible(),
                 )  # Получить настоящую видимость
                 layout.addWidget(checkbox)
                 checkboxes[layer_tree_node] = checkbox

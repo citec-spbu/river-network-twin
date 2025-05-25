@@ -1,4 +1,3 @@
-import os
 import math
 from .common import add_dem_layer, get_main_def
 from .progress_manager import ProgressManager
@@ -7,25 +6,25 @@ import numpy as np
 import processing
 from osgeo import gdal
 from pyproj import Transformer
+from PyQt5.QtWidgets import QPushButton
 from qgis.core import (
-    QgsProject,
+    QgsCategorizedSymbolRenderer,
     QgsCoordinateReferenceSystem,
-    QgsPointXY,
-    QgsRasterLayer,
-    QgsVectorLayer,
-    QgsGeometry,
+    QgsFeature,
     QgsField,
     QgsFields,
-    QgsFeature,
-    QgsSymbol,
-    QgsRendererCategory,
-    QgsCategorizedSymbolRenderer,
+    QgsGeometry,
+    QgsPointXY,
     QgsProcessingFeatureSourceDefinition,
+    QgsProject,
+    QgsRasterLayer,
+    QgsRendererCategory,
+    QgsSymbol,
+    QgsVectorLayer,
 )
 from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtCore import QVariant, QEventLoop, pyqtSignal
+from qgis.PyQt.QtCore import QEventLoop, QVariant, pyqtSignal
 from qgis.PyQt.QtGui import QColor
-from PyQt5.QtWidgets import QPushButton
 from qgis.utils import iface
 
 

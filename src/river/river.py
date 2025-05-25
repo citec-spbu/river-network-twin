@@ -1,6 +1,22 @@
 import os
 from typing import List, Optional
-from src.common import (
+
+import processing
+from qgis.core import (
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsFeature,
+    QgsField,
+    QgsGeometry,
+    QgsPointXY,
+    QgsProject,
+    QgsRaster,
+)
+from qgis.PyQt.QtCore import QEventLoop, QVariant
+from qgis.PyQt.QtWidgets import QInputDialog, QMessageBox
+from qgis.utils import iface
+
+from ..common import (
     add_dem_layer,
     add_opentopo_layer,
     download_dem,
@@ -445,7 +461,7 @@ def select_analysis_bbox() -> Optional[List[float]]:
 
         return [lon - radius, lat - radius, lon + radius, lat + radius]
 
-    elif method == "Область по 4 точкам":
+    if method == "Область по 4 точкам":
         canvas = iface.mapCanvas()
         tool = PointSelectionTool(canvas, points=4)
         canvas.setMapTool(tool)
