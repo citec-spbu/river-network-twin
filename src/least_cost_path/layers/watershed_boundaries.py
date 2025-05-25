@@ -60,7 +60,11 @@ def build_watershed_boundaries(
     comp_id = 0
     for comp in nx.connected_components(G):
         subG = G.subgraph(comp)
-        cycles = nx.cycle_basis(subG)
+        D = nx.DiGraph()
+        D.add_edges_from(subG.edges())
+        D.add_edges_from([(v, u) for u, v in subG.edges()])
+        cycles = list(nx.simple_cycles(D))
+
         max_area = 0.0
         best_geom = None
 
