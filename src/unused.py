@@ -1,15 +1,15 @@
+import processing
 from qgis.core import (
-    QgsProject,
+    QgsFeature,
+    QgsField,
+    QgsGeometry,
     QgsPointXY,
+    QgsProject,
+    QgsRaster,
     QgsRasterLayer,
     QgsVectorLayer,
-    QgsGeometry,
-    QgsField,
-    QgsRaster,
-    QgsFeature,
 )
 from qgis.PyQt.QtCore import QVariant
-import processing
 
 
 # Определить максимальную высоту для каждой линии
@@ -67,10 +67,12 @@ def populate_elevation_data(layer, dem_layer):
         end_point = QgsPointXY(polyline[-1])
 
         start_z = dem_layer.dataProvider().identify(
-            start_point, QgsRaster.IdentifyFormatValue
+            start_point,
+            QgsRaster.IdentifyFormatValue,
         )
         end_z = dem_layer.dataProvider().identify(
-            end_point, QgsRaster.IdentifyFormatValue
+            end_point,
+            QgsRaster.IdentifyFormatValue,
         )
 
         start_z_value = start_z.results()[1] if start_z.isValid() else None
@@ -83,8 +85,8 @@ def populate_elevation_data(layer, dem_layer):
                 feature.id(): {
                     line_provider.fields().indexOf("start_z"): start_z_value,
                     line_provider.fields().indexOf("end_z"): end_z_value,
-                }
-            }
+                },
+            },
         )
 
     layer.commitChanges()
@@ -130,7 +132,7 @@ def calculate_coordinates(layer_path, project_folder):
         },
     )["OUTPUT"]
 
-    end_y = processing.run(
+    return processing.run(
         "native:fieldcalculator",
         {
             "INPUT": end_x,
@@ -142,8 +144,6 @@ def calculate_coordinates(layer_path, project_folder):
             "OUTPUT": f"{project_folder}rivers_with_points.gpkg",
         },
     )["OUTPUT"]
-
-    return end_y
 
 
 # Сохранить и добавить заполненные области водосбора в проект
@@ -162,7 +162,8 @@ def quickosm_query(key, value, extent):
 
 def download_and_add_layer(url, layer_name):
     file = processing.run(
-        "native:filedownloader", {"URL": url, "OUTPUT": "TEMPORARY_OUTPUT"}
+        "native:filedownloader",
+        {"URL": url, "OUTPUT": "TEMPORARY_OUTPUT"},
     )["OUTPUT"]
     layer = QgsVectorLayer(file + f"|layername={layer_name}", layer_name, "ogr")
     QgsProject.instance().addMapLayer(layer)
@@ -205,7 +206,7 @@ def fill_sinks(reprojected_relief, project_folder):
 
 
 # Получить ссылки на слои линий и точек
-def process_maximum_height_points(rivers_layer, point_layer):
+def process_maximum_height_points(point_layer):
     line_layer_name = "rivers_and_points"
     layers = QgsProject.instance().mapLayersByName(line_layer_name)
     layer = layers[0]

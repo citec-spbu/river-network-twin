@@ -1,23 +1,26 @@
 import math
 import os
 import time
-from .layers.output_least_cost_path import build_output_least_cost_path
+
+import networkit as nk
+from osgeo import gdal
 from qgis.core import (
-    QgsProject,
-    QgsPointXY,
-    QgsGeometry,
-    QgsSpatialIndex,
-    QgsRasterLayer,
-    QgsVectorLayer,
-    QgsFeature,
-    QgsCoordinateTransform,
     QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsFeature,
+    QgsGeometry,
+    QgsPointXY,
+    QgsProject,
+    QgsVectorLayer,
+    QgsRasterLayer,
+    QgsSpatialIndex,
     QgsVectorFileWriter,
 )
 from qgis.PyQt.QtWidgets import QMessageBox
-import networkit as nk
-from osgeo import gdal
-from src.river.layers.water_rasterized import build_water_rasterized
+
+from ..river.layers.water_rasterized import build_water_rasterized
+from .layers.output_least_cost_path import build_output_least_cost_path
+from .layers.watershed_boundaries import build_watershed_boundaries
 
 
 def least_cost_path_analysis(project_folder):
@@ -61,7 +64,9 @@ def least_cost_path_analysis(project_folder):
     cost_layer = QgsRasterLayer(dem_pooled, "DEM Cost Layer")
     if not cost_layer.isValid():
         QMessageBox.warning(
-            None, "Ошибка", "Не удалось загрузить перепроецированный DEM."
+            None,
+            "Ошибка",
+            "Не удалось загрузить перепроецированный DEM.",
         )
         return
 
@@ -174,10 +179,11 @@ def least_cost_path_analysis(project_folder):
     def calculate_minimum_elevation(raster_layer, line_geom):
         provider = raster_layer.dataProvider()
         min_elev = float("inf")
-        if line_geom.isMultipart():
-            lines = line_geom.asMultiPolyline()
-        else:
-            lines = [line_geom.asPolyline()]
+        lines = (
+            line_geom.asMultiPolyline()
+            if line_geom.isMultipart()
+            else [line_geom.asPolyline()]
+        )
         for line in lines:
             for pt in line:
                 sample = provider.sample(QgsPointXY(pt.x(), pt.y()), 1)
@@ -208,10 +214,12 @@ def least_cost_path_analysis(project_folder):
         first_point = polyline[0]
         last_point = polyline[-1]
         sample_start = elevation_layer.dataProvider().sample(
-            QgsPointXY(first_point.x(), first_point.y()), 1
+            QgsPointXY(first_point.x(), first_point.y()),
+            1,
         )
         sample_end = elevation_layer.dataProvider().sample(
-            QgsPointXY(last_point.x(), last_point.y()), 1
+            QgsPointXY(last_point.x(), last_point.y()),
+            1,
         )
         if sample_start and sample_end:
             z_start, valid_start = sample_start
@@ -291,6 +299,13 @@ def least_cost_path_analysis(project_folder):
         flush=True,
     )
 
+    watershed_boundaries_path = os.path.join(
+        project_folder,
+        "watershed_boundaries.gpkg",
+    )
+    watershed_layer = build_watershed_boundaries(lcp_layer, watershed_boundaries_path)
+    QgsProject.instance().addMapLayer(watershed_layer)
+
 
 def build_cost_graph(raster_path, water_layer, eps=1e-6):
     ds_cost = gdal.Open(raster_path)
@@ -353,19 +368,22 @@ def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
     if not 0 <= i < n_rows or not 0 <= j < n_cols:
         print(f"({i}, {j})", flush=True)
         return -1, -1
-    l, r = max(0, i - radius), min(i + radius + 1, n_rows)
-    t, b = max(0, j - radius), min(j + radius + 1, n_cols)
 
-    point = (i, j)
-    sqr_distance = -1
+    row_start = max(0, i - radius)
+    row_end = min(i + radius + 1, n_rows)
+    col_start = max(0, j - radius)
+    col_end = min(j + radius + 1, n_cols)
 
-    for u in range(l, r):
-        for v in range(t, b):
-            if water[u, v] == 0:
-                u_c, v_c = pixel_to_coord(u, v, gt)
-                dist = (x - u_c) ** 2 + (y - v_c) ** 2
-                if sqr_distance > dist or sqr_distance == -1:
-                    point = (u, v)
-                    sqr_distance = dist
+    nearest_point = (i, j)
+    min_squared_distance = -1
 
-    return point
+    for row in range(row_start, row_end):
+        for col in range(col_start, col_end):
+            if water[row, col] == 0:
+                coord_x, coord_y = pixel_to_coord(row, col, gt)
+                dist = (x - coord_x) ** 2 + (y - coord_y) ** 2
+                if min_squared_distance > dist or min_squared_distance == -1:
+                    nearest_point = (row, col)
+                    min_squared_distance = dist
+
+    return nearest_point

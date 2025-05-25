@@ -1,11 +1,11 @@
 from qgis.core import (
-    QgsFields,
-    QgsWkbTypes,
     QgsCoordinateReferenceSystem,
+    QgsField,
+    QgsFields,
+    QgsProject,
     QgsVectorFileWriter,
     QgsVectorLayer,
-    QgsField,
-    QgsProject,
+    QgsWkbTypes,
 )
 from qgis.PyQt.QtCore import QVariant
 
@@ -33,10 +33,14 @@ def build_max_height_points(
 
     # Создаем GeoPackage-слой
     QgsVectorFileWriter.create(
-        point_layer_path, fields, QgsWkbTypes.Point, crs, transform_context, options
+        point_layer_path,
+        fields,
+        QgsWkbTypes.Point,
+        crs,
+        transform_context,
+        options,
     )
 
     # Открываем и добавляем в проект
     uri = f"{point_layer_path}|layername={layer_name}"
-    layer = QgsVectorLayer(uri, layer_name, "ogr")
-    return layer
+    return QgsVectorLayer(uri, layer_name, "ogr")

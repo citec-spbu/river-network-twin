@@ -1,5 +1,5 @@
 import processing
-from qgis.core import QgsVectorLayer, QgsCoordinateReferenceSystem
+from qgis.core import QgsCoordinateReferenceSystem
 from osgeo import gdal
 
 

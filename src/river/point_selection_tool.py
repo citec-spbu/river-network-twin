@@ -1,6 +1,6 @@
+from qgis.gui import QgsMapToolEmitPoint, QgsVertexMarker
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtGui import QColor
-from qgis.gui import QgsMapToolEmitPoint, QgsVertexMarker
 
 
 class PointSelectionTool(QgsMapToolEmitPoint):

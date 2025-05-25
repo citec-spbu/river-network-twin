@@ -1,31 +1,33 @@
-import os
 import math
-from .common import add_dem_layer, get_main_def
+import os
+import sys
 
 import numpy as np
 import processing
 from osgeo import gdal
 from pyproj import Transformer
+from PyQt5.QtWidgets import QPushButton
 from qgis.core import (
-    QgsProject,
+    QgsCategorizedSymbolRenderer,
     QgsCoordinateReferenceSystem,
-    QgsPointXY,
-    QgsRasterLayer,
-    QgsVectorLayer,
-    QgsGeometry,
+    QgsFeature,
     QgsField,
     QgsFields,
-    QgsFeature,
-    QgsSymbol,
-    QgsRendererCategory,
-    QgsCategorizedSymbolRenderer,
+    QgsGeometry,
+    QgsPointXY,
     QgsProcessingFeatureSourceDefinition,
+    QgsProject,
+    QgsRasterLayer,
+    QgsRendererCategory,
+    QgsSymbol,
+    QgsVectorLayer,
 )
 from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtCore import QVariant, QEventLoop, pyqtSignal
+from qgis.PyQt.QtCore import QEventLoop, QVariant, pyqtSignal
 from qgis.PyQt.QtGui import QColor
-from PyQt5.QtWidgets import QPushButton
 from qgis.utils import iface
+
+from .common import add_dem_layer, get_main_def
 
 
 def start_point_collection():
@@ -46,10 +48,9 @@ def create_polygon_from_points(points):
     qgs_points = [
         QgsPointXY(pt.x(), pt.y()) for pt in points
     ]  # Преобразуем в QgsPointXY
-    polygon = QgsGeometry.fromPolygonXY(
-        [qgs_points]
+    return QgsGeometry.fromPolygonXY(
+        [qgs_points],
     )  # Обратите внимание на вложение в список
-    return polygon
 
 
 def add_polygon_to_layer(polygon):
@@ -68,7 +69,10 @@ def add_polygon_to_layer(polygon):
 
 
 def clip_dem_with_polygon(
-    dem_layer, polygon_layer, masked_dem_output_path, project_folder
+    dem_layer,
+    polygon_layer,
+    masked_dem_output_path,
+    project_folder,
 ):
     """
     Создает буфер вокруг полигона и обрезает DEM по этому буферу.
@@ -99,7 +103,8 @@ def clip_dem_with_polygon(
         {
             "INPUT": dem_layer,
             "MASK": QgsProcessingFeatureSourceDefinition(
-                buffered_mask, selectedFeaturesOnly=False
+                buffered_mask,
+                selectedFeaturesOnly=False,
             ),
             "CROP_TO_CUTLINE": True,  # Оставляем все пиксели, пересекающие границу полигона
             "ALL_TOUCHED": True,  # Включаем все пиксели, хотя бы частично затронутые полигоном
@@ -111,7 +116,10 @@ def clip_dem_with_polygon(
 
 
 def handle_points_collection(
-    collector, dem_layer, masked_dem_output_path, project_folder
+    collector,
+    dem_layer,
+    masked_dem_output_path,
+    project_folder,
 ):
     """
     Обработчик завершения сбора точек: формирует полигон, добавляет его в проект и запускает обрезку DEM.
@@ -124,7 +132,10 @@ def handle_points_collection(
     polygon = create_polygon_from_points(selected_points)
     polygon_layer = add_polygon_to_layer(polygon)
     clip_dem_with_polygon(
-        dem_layer, polygon_layer, masked_dem_output_path, project_folder
+        dem_layer,
+        polygon_layer,
+        masked_dem_output_path,
+        project_folder,
     )
 
 
@@ -140,7 +151,10 @@ def add_finish_button(collector, dem_layer, masked_dem_output_path, project_fold
         collector.complete_collection()
         finish_button.deleteLater()  # Убираем кнопку после завершения
         handle_points_collection(
-            collector, dem_layer, masked_dem_output_path, project_folder
+            collector,
+            dem_layer,
+            masked_dem_output_path,
+            project_folder,
         )
         process_complete()  # Сигнализируем об окончании процесса
 
@@ -163,7 +177,9 @@ def wait_for_process():
 
 
 def process_dem_with_polygon(
-    main_dem_file_path, masked_dem_output_path, project_folder
+    main_dem_file_path,
+    masked_dem_output_path,
+    project_folder,
 ):
     """
     Основной рабочий поток обработки DEM: загружает DEM, инициирует сбор точек пользователем,
@@ -200,7 +216,8 @@ def reproject_dem2(project_folder):
         },
     )["OUTPUT"]
     print(
-        f"Репроекция выполнена. Файл сохранен в {output_reprojected_path}", flush=True
+        f"Репроекция выполнена. Файл сохранен в {output_reprojected_path}",
+        flush=True,
     )
 
     return reprojected_dem
@@ -372,18 +389,24 @@ def filter_isoline(contours_layer):
     """
     # Фильтрация изолиний по диапазону высот
     filtered_layer = QgsVectorLayer(
-        "LineString?crs=EPSG:3857", "Filtered Contours", "memory"
+        "LineString?crs=EPSG:3857",
+        "Filtered Contours",
+        "memory",
     )  # Используем ту же CRS, что и DEM
     filtered_provider = filtered_layer.dataProvider()
     filtered_provider.addAttributes(
-        contours_layer.fields()
+        contours_layer.fields(),
     )  # Копируем атрибуты из изолиний
     filtered_layer.updateFields()
     return filtered_provider, filtered_layer
 
 
 def adding_isolines_by_height(
-    contours_layer, min_height, max_height, filtered_provider, filtered_layer
+    contours_layer,
+    min_height,
+    max_height,
+    filtered_provider,
+    filtered_layer,
 ):
     """
     Добавляет в новый слой только те изолинии, высота которых попадает в заданный диапазон.
@@ -392,7 +415,7 @@ def adding_isolines_by_height(
         elevation = feature["ELEV"]
         if min_height <= elevation <= max_height:  # Диапазон высот
             filtered_provider.addFeatures(
-                [feature]
+                [feature],
             )  # Добавляем отфильтрованные изолинии
 
     filtered_layer.updateExtents()  # Обновляем границы слоя
@@ -409,12 +432,19 @@ def create_isolines(reprojected_dem_mask, min_height, max_height, project_folder
 
     _, hop = calculate(H, J, angle)
     contours_output_path, result = construct_isolines(
-        reprojected_dem_mask, hop, max_height, project_folder
+        reprojected_dem_mask,
+        hop,
+        max_height,
+        project_folder,
     )
     contours_layer = add_isolines_to_a_layer(contours_output_path, result)
     filtered_provider, filtered_layer = filter_isoline(contours_layer)
     adding_isolines_by_height(
-        contours_layer, min_height, max_height, filtered_provider, filtered_layer
+        contours_layer,
+        min_height,
+        max_height,
+        filtered_provider,
+        filtered_layer,
     )
     return filtered_layer
 
@@ -424,11 +454,13 @@ def add_forests_layer():
     Создает временный слой для лесополос и добавляет поле 'Step'.
     """
     forest_layer = QgsVectorLayer(
-        "LineString?crs=EPSG:3857", "Forest Belts", "memory"
+        "LineString?crs=EPSG:3857",
+        "Forest Belts",
+        "memory",
     )  # Совместимый CRS
     forest_provider = forest_layer.dataProvider()
     forest_provider.addAttributes(
-        [QgsField("Step", QVariant.Int)]
+        [QgsField("Step", QVariant.Int)],
     )  # Добавляем поле Step
     forest_layer.updateFields()
     return forest_layer, forest_provider
@@ -443,7 +475,7 @@ def generate_shades(base_color, steps):
         factor = i / (steps - 1)  # Нормализуем в диапазон [0, 1]
         # Увеличиваем интенсивность цвета для яркости
         r = int(
-            base_color.red() * (1 - factor) + 255 * factor
+            base_color.red() * (1 - factor) + 255 * factor,
         )  # Плавное увеличение от base к яркому
         g = int(base_color.green() * (1 - factor) + 255 * factor)
         b = int(base_color.blue() * (1 - factor) + 255 * factor)
@@ -463,12 +495,11 @@ def generate_color_pallete():
     base_color2 = QColor(0, 0, 255)
     grad_steps = 255
     # Генерируем оттенки
-    colors = (
+    return (
         generate_shades(base_color2, grad_steps)
         + generate_shades(base_color1, grad_steps)
         + generate_shades(base_color, grad_steps)
     )
-    return colors
 
 
 def add_forest_feature(filtered_layer, forest_provider, forest_layer, colors):
@@ -491,7 +522,9 @@ def add_forest_feature(filtered_layer, forest_provider, forest_layer, colors):
             symbol.setColor(color)
             # Добавляем категорию для рендера
             category = QgsRendererCategory(
-                step_index, symbol, f"Лесополоса {step_index}"
+                step_index,
+                symbol,
+                f"Лесополоса {step_index}",
             )
             categories.append(category)
             step_index += 1
@@ -516,7 +549,7 @@ def check_forest_layers():
     region_layers = QgsProject.instance().mapLayersByName("Selected Region")
     if not forest_layers or not region_layers:
         print("Не найдены слои 'Forest Belts' или 'Selected Region'")
-        exit()
+        sys.exit()
     return forest_layers[0], region_layers[0]
 
 
@@ -525,7 +558,8 @@ def create_boundary_layer(selected_region_layer):
     Создает слой границ по выбранному региону.
     """
     boundary_result = processing.run(
-        "native:boundary", {"INPUT": selected_region_layer, "OUTPUT": "memory:"}
+        "native:boundary",
+        {"INPUT": selected_region_layer, "OUTPUT": "memory:"},
     )
     return boundary_result["OUTPUT"]
 
@@ -544,7 +578,12 @@ def setting_up_render(forest_layer):
 
 
 def process_step(
-    unique_steps, forest_layer, boundary_layer, colors, categories, step_index
+    unique_steps,
+    forest_layer,
+    boundary_layer,
+    colors,
+    categories,
+    step_index,
 ):
     """
     Обрабатывает каждый уникальный шаг, соединяя геометрию лесополос с ближайшей границей и обновляя рендер.
@@ -604,7 +643,10 @@ def generate_forest_belts_layer(
     forest_layer, forest_provider = add_forests_layer()
     colors = generate_color_pallete()
     categories = add_forest_feature(
-        filtered_layer, forest_provider, forest_layer, colors
+        filtered_layer,
+        forest_provider,
+        forest_layer,
+        colors,
     )
     config_render(forest_layer, categories)
     forest_layer, selected_region_layer = check_forest_layers()
@@ -613,7 +655,12 @@ def generate_forest_belts_layer(
     base_color = QColor(0, 255, 0)
     colors = generate_shades(base_color, 255)
     forest_layer = process_step(
-        unique_steps, forest_layer, boundary_layer, colors, categories, step_index
+        unique_steps,
+        forest_layer,
+        boundary_layer,
+        colors,
+        categories,
+        step_index,
     )
     render_forest_belts(categories, forest_layer)
 
@@ -621,7 +668,10 @@ def generate_forest_belts_layer(
 def create_forest_belts(project_folder):
     reprojected_dem_mask, min_height, max_height = create_points(project_folder)
     filtered_layer = create_isolines(
-        reprojected_dem_mask, min_height, max_height, project_folder
+        reprojected_dem_mask,
+        min_height,
+        max_height,
+        project_folder,
     )
     generate_forest_belts_layer(filtered_layer)
     print("Лесополосы успешно замкнуты и добавлены в проект.", flush=True)
@@ -632,10 +682,12 @@ def forest(project_folder):
     add_dem_layer(dem_path)
 
     main_dem_file_path = os.path.join(
-        project_folder, "srtm_output.tif"
+        project_folder,
+        "srtm_output.tif",
     )  # Путь к вашему DEM файлу
     masked_dem_output_path = os.path.join(
-        project_folder, "masked_dem.tif"
+        project_folder,
+        "masked_dem.tif",
     )  # Путь к выходному файлу после обрезки
 
     process_dem_with_polygon(main_dem_file_path, masked_dem_output_path, project_folder)
@@ -655,7 +707,9 @@ class PointCollector(QgsMapToolEmitPoint):
         self.points = []
         # Создаем временный слой для отображения точек
         self.point_layer = QgsVectorLayer(
-            "Point?crs=EPSG:3857", "Selected Points", "memory"
+            "Point?crs=EPSG:3857",
+            "Selected Points",
+            "memory",
         )
         self.point_provider = self.point_layer.dataProvider()
         QgsProject.instance().addMapLayer(self.point_layer)
