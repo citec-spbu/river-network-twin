@@ -1,6 +1,7 @@
 import sys
 import os
 
+
 def classFactory(iface):
     project_root = os.path.dirname(os.path.abspath(__file__))
     if project_root not in sys.path:

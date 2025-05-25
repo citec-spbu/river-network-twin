@@ -408,19 +408,22 @@ def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
     if not 0 <= i < n_rows or not 0 <= j < n_cols:
         print(f"({i}, {j})", flush=True)
         return -1, -1
-    l, r = max(0, i - radius), min(i + radius + 1, n_rows)
-    t, b = max(0, j - radius), min(j + radius + 1, n_cols)
 
-    point = (i, j)
-    sqr_distance = -1
+    row_start = max(0, i - radius)
+    row_end = min(i + radius + 1, n_rows)
+    col_start = max(0, j - radius)
+    col_end = min(j + radius + 1, n_cols)
 
-    for u in range(l, r):
-        for v in range(t, b):
-            if water[u, v] == 0:
-                u_c, v_c = pixel_to_coord(u, v, gt)
-                dist = (x - u_c) ** 2 + (y - v_c) ** 2
-                if sqr_distance > dist or sqr_distance == -1:
-                    point = (u, v)
-                    sqr_distance = dist
+    nearest_point = (i, j)
+    min_squared_distance = -1
 
-    return point
+    for row in range(row_start, row_end):
+        for col in range(col_start, col_end):
+            if water[row, col] == 0:
+                coord_x, coord_y = pixel_to_coord(row, col, gt)
+                dist = (x - coord_x) ** 2 + (y - coord_y) ** 2
+                if min_squared_distance > dist or min_squared_distance == -1:
+                    nearest_point = (row, col)
+                    min_squared_distance = dist
+
+    return nearest_point
