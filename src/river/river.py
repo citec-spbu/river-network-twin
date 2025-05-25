@@ -11,6 +11,7 @@ from src.common import (
     transform_coordinates,
 )
 from ..progress_manager import ProgressManager
+from osgeo import gdal
 import processing
 from time import sleep
 from qgis.core import (
@@ -34,7 +35,6 @@ from .layers.rivers_and_points import build_rivers_and_points_layer
 from .layers.rivers_merged import build_merged_layer
 from .layers.utils import load_quickosm_layer
 from .layers.clustering import assign_clusters, preparing_data_for_clustering
-
 RIVER_FILTERS = {
     "max_strahler_order": (">=", 2),
     "total_length": (">", 1000),

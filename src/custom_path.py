@@ -77,14 +77,20 @@ class CustomPathBuilder:
                                         "DEM слой не найден. Сначала выполните анализ оптимальных путей.")
                     return
 
+            water_rasterized = os.path.join(self.project_folder, "water_rasterized.tif")
+            if not os.path.exists(water_rasterized):
+                QMessageBox.warning(None, "Ошибка",
+                                    "Растеризованный слой воды не найден.")
+                return
+
             # Загружаем DEM
             dem_layer = QgsRasterLayer(dem_path, "DEM")
             if not dem_layer.isValid():
                 QMessageBox.warning(None, "Ошибка", "Не удалось загрузить DEM слой")
                 return
 
-            # Строим граф стоимости
-            G, gt, n_rows, n_cols = build_cost_graph(dem_path)
+            # Строим граф стоимости с учетом нового модуля least_cost_path
+            G, gt, n_rows, n_cols = build_cost_graph(dem_path, water_rasterized)
 
             # Преобразуем координаты
             src_crs = QgsProject.instance().crs()
@@ -97,6 +103,15 @@ class CustomPathBuilder:
             # Конвертируем в пиксели
             start_i, start_j = coord_to_pixel(start_3857.x(), start_3857.y(), gt, n_rows, n_cols)
             end_i, end_j = coord_to_pixel(end_3857.x(), end_3857.y(), gt, n_rows, n_cols)
+
+            # Проверяем, что точки находятся в пределах растра
+            if not (0 <= start_i < n_rows and 0 <= start_j < n_cols):
+                QMessageBox.warning(None, "Ошибка", "Начальная точка находится вне DEM")
+                return
+
+            if not (0 <= end_i < n_rows and 0 <= end_j < n_cols):
+                QMessageBox.warning(None, "Ошибка", "Конечная точка находится вне DEM")
+                return
 
             start_node = start_i * n_cols + start_j
             end_node = end_i * n_cols + end_j
