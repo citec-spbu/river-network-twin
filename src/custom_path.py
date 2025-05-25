@@ -20,7 +20,7 @@ from qgis.PyQt.QtWidgets import (
 )
 from .river.point_selection_tool import PointSelectionTool
 import os
-
+from src.river.layers.water_rasterized import build_water_rasterized
 
 class CustomPathBuilder:
     def __init__(self, project_folder):
