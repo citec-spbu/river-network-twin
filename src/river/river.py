@@ -94,22 +94,22 @@ def river(project_folder, with_clustering):
         if not progress.update(10, "Загрузка цифровой модели рельефа"):
             return
 
-            # Скачивание DEM
-            dem_path = download_dem(bbox, project_folder)
+        # Скачивание DEM
+        dem_path = download_dem(bbox, project_folder)
 
-            # Создание перепроецированного DEM в EPSG:3857
-            dem_3857 = f"{project_folder}/river_dem_3857.tif"
-            gdal.Warp(
-                dem_3857,
-                dem_path,
-                dstSRS="EPSG:3857",
-                resampleAlg="bilinear",
-                format="GTiff",
-            )
+        # Создание перепроецированного DEM в EPSG:3857
+        dem_3857 = f"{project_folder}/river_dem_3857.tif"
+        gdal.Warp(
+            dem_3857,
+            dem_path,
+            dstSRS="EPSG:3857",
+            resampleAlg="bilinear",
+            format="GTiff",
+        )
 
-            # Добавление слоя DEM
-            dem_layer = add_dem_layer(dem_path)
-            reprojected_relief = reproject_dem(dem_path)
+        # Добавление слоя DEM
+        dem_layer = add_dem_layer(dem_path)
+        reprojected_relief = reproject_dem(dem_path)
 
         sleep(0.1)
         progress._keep_active()
