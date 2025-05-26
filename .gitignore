@@ -1,5 +1,6 @@
 work/
 .ruff_cache/
 .vscode/
+.idea/
 
 .DS_Store
