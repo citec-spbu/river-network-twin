@@ -87,7 +87,7 @@ def least_cost_path_analysis(project_folder):
     G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source(), water_rasterized)
 
     fid_to_node = {}
-    terminal_fids = []
+    terminal_nodes_set = set()
     ds_water = gdal.Open(water_rasterized)
     arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
     nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
@@ -113,8 +113,9 @@ def least_cost_path_analysis(project_folder):
         feature.setGeometry(QgsGeometry.fromPointXY(point))
         sources_provider.addFeature(feature)
 
-        fid_to_node[feat.id()] = node_idx
-        terminal_fids.append(feat.id())
+        terminal_nodes_set.add(node_idx)
+
+    terminal_nodes = list(terminal_nodes_set)
 
     sources_layer.updateExtents()
     options = QgsVectorFileWriter.SaveVectorOptions()
@@ -134,31 +135,28 @@ def least_cost_path_analysis(project_folder):
     lcp_layer = build_output_least_cost_path(lcp_layer_path)
 
     dp = lcp_layer.dataProvider()
-    for src_fid in terminal_fids:
-        src_node = fid_to_node[src_fid]
+    for i in range(len(terminal_nodes)):
+        src_node = terminal_nodes[i]
         dijk = nk.distance.Dijkstra(G, src_node)
         dijk.run()
 
-        for dst_fid in terminal_fids:
-            if dst_fid == src_fid:
-                continue
-
-            dst_node = fid_to_node[dst_fid]
-            node_path = dijk.getPath(dst_node)
+        for dst in terminal_nodes[i + 1 :]:
+            node_path = dijk.getPath(dst)
             if not node_path:
                 continue
 
-            # Конвертируем узлы в координаты
-            path_pts = [
-                QgsPointXY(*pixel_to_coord(u // n_cols, u % n_cols, gt))
-                for u in node_path
-            ]
-
-            feat_out = QgsFeature(lcp_layer.fields())
-            feat_out.setGeometry(QgsGeometry.fromPolylineXY(path_pts))
-            feat_out["start_id"] = src_fid
-            feat_out["end_id"] = dst_fid
-            dp.addFeature(feat_out)
+            path_pts = []
+            for u in node_path:
+                if u != node_path[0] and u != node_path[-1]:
+                    if u in terminal_nodes_set:
+                        break
+                path_pts.append(
+                    QgsPointXY(*pixel_to_coord(u // n_cols, u % n_cols, gt))
+                )
+            else:
+                feat_out = QgsFeature(lcp_layer.fields())
+                feat_out.setGeometry(QgsGeometry.fromPolylineXY(path_pts))
+                dp.addFeature(feat_out)
 
     lcp_layer.updateExtents()
     QgsProject.instance().addMapLayer(lcp_layer)
