@@ -8,7 +8,7 @@ def build_water_rasterized(
     rivers_path: Path,
     water_path: Path,
     dem_path: Path,
-    output_path,
+    output_path: Path,
     rivers_width=0.0003,
 ):
     buffered_rivers = processing.run(
