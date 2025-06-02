@@ -280,8 +280,7 @@ def add_isolines_to_a_layer(contours_output_path: Path, result, progress):
 
     if not contours_layer.isValid():
         msg = "Не удалось загрузить слой изолиний."
-        raise Exception(msg)
-
+        raise ValueError(msg)
     QgsProject.instance().addMapLayer(contours_layer)
     return contours_layer
 
