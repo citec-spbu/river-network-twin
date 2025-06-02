@@ -28,8 +28,9 @@ def build_watershed_boundaries(
         for line in lines:
             for i in range(len(line) - 1):
                 p1, p2 = line[i], line[i + 1]
-                n1 = (round(p1.x(), 3), round(p1.y(), 3))
-                n2 = (round(p2.x(), 3), round(p2.y(), 3))
+                precision = 3  # Можно сделать параметром функции
+                n1 = (round(p1.x(), precision), round(p1.y(), precision))
+                n2 = (round(p2.x(), precision), round(p2.y(), precision))
                 g.add_edge(n1, n2)
                 node_coords[n1] = p1
                 node_coords[n2] = p2
