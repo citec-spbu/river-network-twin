@@ -26,7 +26,7 @@ from src.least_cost_path.layers.output_least_cost_path import (
 from src.least_cost_path.layers.watershed_boundaries import build_watershed_boundaries
 from src.progress_manager import ProgressManager
 from src.river.layers.water_rasterized import build_water_rasterized
-
+from .layers.polygon_from_path import flood_fill_areas
 
 def least_cost_path_analysis(project_folder: Path) -> None:
     # Инициализация прогресса
