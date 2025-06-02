@@ -1,7 +1,12 @@
 from pathlib import Path
 from typing import Optional
-
-from qgis.core import QgsProject
+import os
+import glob
+from qgis.core import (
+    QgsProject,
+    QgsProcessingProvider,
+    QgsApplication
+)
 from qgis.PyQt.QtWidgets import (
     QAction,
     QCheckBox,
@@ -11,15 +16,47 @@ from qgis.PyQt.QtWidgets import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QLabel,
+    QCheckBox,
 )
+from qgis.core import (
+    QgsRasterLayer,
+)
+from PyQt5.QtGui import QIcon
+import processing
 from qgis.utils import iface
-
-from .custom_path import CustomPathBuilder
-from .forest import forest
-from .least_cost_path.least_cost_path import least_cost_path_analysis
 from .river.river import river
+from .least_cost_path.least_cost_path import least_cost_path_analysis, prepare_cost_layer
+from .least_cost_path.flood_fill_tool import CreateRastrAreasAlgorithm, FloodFillPostProcessing
+from .least_cost_path.least_cost_path_tool import LeastCostPathAnalysisAlgorithm
+from .forest import forest
+from .custom_path import CustomPathBuilder
+from .river.layers.water_rasterized import build_water_rasterized
+from .river.layers.max_height_points import build_max_height_points
 
+class CustomHydrologyToolsProvider(QgsProcessingProvider):
+    """Провайдер для всех пользовательских гидрологических инструментов."""
+    
+    def id(self):
+        # Уникальный идентификатор (должен быть одинаковым для одного провайдера)
+        return 'custom_hydrology_tools'
+    
+    def name(self):
+        return "RiverNETWORK"
+    
+    def loadAlgorithms(self):
+        # Добавляем ВСЕ алгоритмы, которые должны быть в этом провайдере
+        self.addAlgorithm(CreateRastrAreasAlgorithm())
+        self.addAlgorithm(FloodFillPostProcessing())
+        self.addAlgorithm(LeastCostPathAnalysisAlgorithm())
+        # Можно добавить другие алгоритмы
+    
+    def icon(self):
+        # Можно указать путь к иконке (если есть)
+        return QIcon()
+    
 
+    
 class CustomDEMPlugin:
     def __init__(self, iface) -> None:
         self.iface = iface
@@ -32,6 +69,22 @@ class CustomDEMPlugin:
         self.action.triggered.connect(self.run_plugin)
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToMenu("&RiverNETWORK", self.action)
+        
+        # Инициализация GUI для инструмента заливки
+        self.initProcessing()
+        
+
+
+        
+    
+    def initProcessing(self):
+        # Инициализация обработки для обоих функциональностей
+        try:
+            self.provider = CustomHydrologyToolsProvider()
+            QgsApplication.processingRegistry().addProvider(self.provider)
+            
+        except ImportError as e:
+            print(f"Could not initialize processing provider: {e}")
 
     def unload(self) -> None:
         """Удаление плагина."""
@@ -40,6 +93,13 @@ class CustomDEMPlugin:
         if self.custom_path_builder:
             self.custom_path_builder.cleanup()
             self.custom_path_builder = None
+        # Выгрузка инструмента заливки
+        if self.provider:
+            QgsApplication.processingRegistry().removeProvider(self.provider)
+        if self.flood_fill_action:
+            self.iface.removePluginMenu("Гидрология", self.flood_fill_action)
+            self.iface.removeToolBarIcon(self.flood_fill_action)
+            del self.flood_fill_action
 
     def run_plugin(self) -> None:
         # Код плагина
@@ -157,7 +217,36 @@ class CustomDEMPlugin:
         def create_cost_path_with_clustering() -> None:
             dialog.close()
             river(self.project_folder, with_clustering=True)
-            least_cost_path_analysis(self.project_folder)
+            dem_src = f"{self.project_folder}/srtm_output.tif"
+
+            point_layer_path = os.path.join(self.project_folder, "max_height_points.gpkg")
+            point_layer = build_max_height_points(point_layer_path)
+
+            cost_layer = prepare_cost_layer(self.project_folder, dem_src)
+
+
+            # Путь к файлу .tif
+            water_rasterized_tif = f"{self.project_folder}/water_rasterized.tif"
+            water_rasterized = build_water_rasterized(
+                f"{self.project_folder}/merge_result.gpkg",
+                QgsProject.instance().mapLayersByName("water")[0].source(),
+                cost_layer.source(),
+                water_rasterized_tif,
+                0.001,
+            )            
+
+            # Создание и добавление слоя
+            water_rasterized = QgsRasterLayer(water_rasterized_tif, "Water Raster Layer", "gdal")
+            if water_rasterized.isValid():
+                QgsProject.instance().addMapLayer(water_rasterized)
+            else:
+                QMessageBox.warning(None, "Ошибка", "Не удалось загрузить TIFF-растр")
+            
+            least_cost_path_analysis(
+                point_layer,                
+                dem_src,
+                water_rasterized
+            )
             self.add_custom_path_button()
 
         # Свяжите кнопки с их действиями
@@ -224,6 +313,10 @@ class CustomDEMPlugin:
             else:
                 print(f"Deleted: {file_path}", flush=True)
 
+    def run_flood_fill_tool(self):
+        # Запуск инструмента заливки
+        processing.execAlgorithmDialog('custom_hydrology_tools:flood_fill_areas')
+
     def run_programm(self) -> None:
         # Подготовка к работе
         self.clear_cache()
@@ -232,3 +325,4 @@ class CustomDEMPlugin:
         # Запуск диалогового окна
         self.show_choice_dialog()
         self.show_layer_visibility_dialog()
+

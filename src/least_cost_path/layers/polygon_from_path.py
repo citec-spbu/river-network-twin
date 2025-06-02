@@ -3,19 +3,17 @@ from osgeo import gdal
 import queue
 import os
 from qgis.core import (
-    QgsProject,
-    QgsRasterLayer,
     QgsVectorLayer,
+    QgsProcessing
 )
 import processing
 
-def flood_fill_areas(project_folder):
-    # Загрузка необходимых слоев
-    water_raster_path = f"{project_folder}/water_rasterized.tif"
-    lcp_vector_path = os.path.join(project_folder, "output_least_cost_path.gpkg")
-    
+def flood_fill_areas(raster_path, vector_path, output_raster, feedback=None):
+    """
+    Основная функция заливки областей
+    """
     # Загрузка растра воды
-    ds_water = gdal.Open(water_raster_path)
+    ds_water = gdal.Open(raster_path)
     band_water = ds_water.GetRasterBand(1)
     arr_water = band_water.ReadAsArray()
     gt = ds_water.GetGeoTransform()
@@ -24,7 +22,7 @@ def flood_fill_areas(project_folder):
     
     # Создание маски путей (1 - путь, 0 - нет пути)
     mask_path = np.zeros_like(arr_water, dtype=np.uint8)
-    lcp_layer = QgsVectorLayer(lcp_vector_path, "Least Cost Paths", "ogr")
+    lcp_layer = QgsVectorLayer(vector_path, "Least Cost Paths", "ogr")
     
     if lcp_layer.isValid():
         # Растеризация путей
@@ -48,15 +46,21 @@ def flood_fill_areas(project_folder):
     # Создание массивов для результатов
     filled_areas = np.zeros_like(arr_water, dtype=np.uint8)
     visited = np.zeros_like(arr_water, dtype=bool)
-    region_counter = 1
 
     # Направления соседей (4-связность)
     directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 
     # Поиск всех водных пикселей
     water_pixels = np.argwhere((arr_water != nodata_water) & (arr_water > 0))
-    
-    for y, x in water_pixels:
+    total = len(water_pixels)
+
+    for i, (y, x) in enumerate(water_pixels):
+        if feedback and feedback.isCanceled():
+            break
+            
+        if feedback:
+            feedback.setProgress(int(i / total * 50))
+        
         if visited[y, x] or filled_areas[y, x] > 0:
             continue
             
@@ -106,14 +110,7 @@ def flood_fill_areas(project_folder):
     
     # Сохранение инвертированного результата
     driver = gdal.GetDriverByName("GTiff")
-    output_path = f"{project_folder}/inverted_flood_fill.tif"
-    ds_out = driver.Create(
-        output_path,
-        ds_water.RasterXSize,
-        ds_water.RasterYSize,
-        1,
-        gdal.GDT_Byte
-    )
+    ds_out = driver.Create(output_raster, cols, rows, 1, gdal.GDT_Byte)
     ds_out.SetGeoTransform(gt)
     ds_out.SetProjection(ds_water.GetProjection())
     band_out = ds_out.GetRasterBand(1)
@@ -124,19 +121,12 @@ def flood_fill_areas(project_folder):
     ds_out = None
     
 
-    # Добавление слоя в проект QGIS
-    layer = QgsRasterLayer(output_path, "Inverted Flood Fill Areas")
-    if layer.isValid():
-        QgsProject.instance().addMapLayer(layer)
-        # Обработка растра
-        process_flood_fill(project_folder)
-        return layer
-    else:
-        raise RuntimeError("Failed to load inverted flood fill areas layer")
+    return output_raster
 
-def process_flood_fill(project_folder):
-    # Путь к инвертированному растру
-    input_raster = f"{project_folder}/inverted_flood_fill.tif"
+def process_flood_fill(input_raster, output_vector, min_area, feedback=None):
+    """
+    Функция постобработки растра
+    """
     
     # Шаг 1: Растеризация -> Полигоны
     polygonized = processing.run("gdal:polygonize", {
@@ -144,55 +134,49 @@ def process_flood_fill(project_folder):
         'BAND': 1,
         'FIELD': 'DN',
         'EIGHT_CONNECTEDNESS': False,
-        'OUTPUT': 'TEMPORARY_OUTPUT'
-    })['OUTPUT']
+        'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT
+    }, feedback=feedback)['OUTPUT']
     
     # Шаг 2: Границы полигонов
     boundary = processing.run("native:boundary", {
         'INPUT': polygonized,
-        'OUTPUT': 'TEMPORARY_OUTPUT'
-    })['OUTPUT']
+        'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT
+    }, feedback=feedback)['OUTPUT']
     
     # Шаг 3: Полигонизация границ
     repolygonized = processing.run("native:polygonize", {
         'INPUT': boundary,
         'KEEP_FIELDS': False,
-        'OUTPUT': 'TEMPORARY_OUTPUT'
-    })['OUTPUT']
+        'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT
+    }, feedback=feedback)['OUTPUT']
     
     # Шаг 4: Объединение полигонов
     dissolved = processing.run("native:dissolve", {
         'INPUT': repolygonized,
         'FIELD': [],
         'SEPARATE_DISJOINT': False,
-        'OUTPUT': 'TEMPORARY_OUTPUT'
-    })['OUTPUT']
+        'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT
+    }, feedback=feedback)['OUTPUT']
     
     # Шаг 5: Разделение мультиполигонов
     single_parts = processing.run("native:multiparttosingleparts", {
         'INPUT': dissolved,
-        'OUTPUT': 'TEMPORARY_OUTPUT'
-    })['OUTPUT']
+        'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT
+    }, feedback=feedback)['OUTPUT']
     
     # Шаг 6: Добавление поля с площадью
     with_area = processing.run("qgis:exportaddgeometrycolumns", {
         'INPUT': single_parts,
         'CALC_METHOD': 0,  # Площадь в CRS слоя
-        'OUTPUT': 'TEMPORARY_OUTPUT'
-    })['OUTPUT']
+        'OUTPUT': QgsProcessing.TEMPORARY_OUTPUT
+    }, feedback=feedback)['OUTPUT']
     
     # Шаг 7: Фильтрация объектов
-    final_path = f"{project_folder}/final_areas.gpkg"
     processing.run("native:extractbyexpression", {
         'INPUT': with_area,
-        'EXPRESSION': f'"area" >= {33111 * 15}',
-        'OUTPUT': final_path
-    })
+        'EXPRESSION': f'"area" >= {min_area}',
+        'OUTPUT': output_vector
+    }, feedback=feedback)
     
-    # Загрузка финального слоя
-    final_layer = QgsVectorLayer(final_path, "Final Flood Fill Areas", "ogr")
-    if final_layer.isValid():
-        QgsProject.instance().addMapLayer(final_layer)
-        return final_layer
-    else:
-        raise RuntimeError("Failed to load final areas layer")
+    
+    return output_vector
