@@ -1,3 +1,4 @@
+from pathlib import Path
 import processing
 from qgis.core import (
     QgsField,
@@ -11,9 +12,9 @@ from qgis.PyQt.QtCore import QVariant
 def preparing_data_for_clustering(
     point_layer,
     dem_layer,
-    RESAMPLE_SCALE,
-    CONTOUR_INTERVAL,
-    data_for_clustering_path,
+    resample_scale,
+    contour_interval,
+    data_for_clustering_path: Path,
 ) -> QgsVectorLayer:
     # Создание ID для точек
     point_layer.startEditing()
@@ -33,7 +34,7 @@ def preparing_data_for_clustering(
             "GRID": dem_layer.source(),
             "LOPASS": "TEMPORARY_OUTPUT",
             "HIPASS": "TEMPORARY_OUTPUT",
-            "SCALE": RESAMPLE_SCALE,
+            "SCALE": resample_scale,
         },
     )
 
@@ -43,7 +44,7 @@ def preparing_data_for_clustering(
         {
             "INPUT": output_dem["LOPASS"],
             "BAND": 1,
-            "INTERVAL": CONTOUR_INTERVAL,
+            "INTERVAL": contour_interval,
             "FIELD_NAME_MIN": "ELEV_MIN",
             "FIELD_NAME_MAX": "ELEV_MAX",
             "OUTPUT": "TEMPORARY_OUTPUT",
@@ -175,9 +176,11 @@ def preparing_data_for_clustering(
         child_ids = []
 
         if target_z in z_dict:
-            for candidate_feat in z_dict[target_z]:
-                if candidate_feat.geometry().intersects(current_geom):
-                    child_ids.append(str(candidate_feat["fid"]))
+            child_ids += [
+                str(candidate_feat["fid"])
+                for candidate_feat in z_dict[target_z]
+                if candidate_feat.geometry().intersects(current_geom)
+            ]
 
         child_ids_str = ",".join(child_ids) if child_ids else None
         attrs_to_update[current_feat.id()] = {id_child_idx: child_ids_str}
@@ -245,22 +248,23 @@ def preparing_data_for_clustering(
     options.driverName = "GPKG"
     QgsVectorFileWriter.writeAsVectorFormat(
         result_layer,
-        data_for_clustering_path,
+        str(data_for_clustering_path),
         options,
     )
 
     # Загрузка слоя
     final_layer = QgsVectorLayer(
-        f"{data_for_clustering_path}|layername=Изолинии",
+        f"{str(data_for_clustering_path)}|layername=Изолинии",
         "Изолинии",
         "ogr",
     )
     if not final_layer.isValid():
-        raise Exception("Слой не загружен!")
+        msg = "Слой не загружен!"
+        raise Exception(msg)
     return final_layer
 
 
-def assign_clusters(data_for_clustering, point_layer, points_and_clusters_path):
+def assign_clusters(data_for_clustering, point_layer, points_and_clusters_path: Path):
     # Создаем поле cluster, если его нет
     if point_layer.fields().indexFromName("cluster") == -1:
         point_layer.startEditing()
@@ -365,16 +369,17 @@ def assign_clusters(data_for_clustering, point_layer, points_and_clusters_path):
     options.driverName = "GPKG"
     QgsVectorFileWriter.writeAsVectorFormat(
         point_layer,
-        points_and_clusters_path,
+        str(points_and_clusters_path),
         options,
     )
 
     # Загрузка слоя
     final_layer = QgsVectorLayer(
-        f"{points_and_clusters_path}|layername=Points_and_clusters",
+        f"{str(points_and_clusters_path)}|layername=Points_and_clusters",
         "Points_and_clusters",
         "ogr",
     )
     if not final_layer.isValid():
-        raise Exception("Слой не загружен!")
+        msg = "Слой не загружен!"
+        raise Exception(msg)
     return final_layer

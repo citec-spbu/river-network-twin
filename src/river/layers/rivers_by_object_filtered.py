@@ -1,3 +1,4 @@
+from pathlib import Path
 import processing
 from qgis.core import QgsField, QgsSpatialIndex, QgsVectorLayer, QgsVectorLayerExporter
 from qgis.PyQt.QtCore import QVariant
@@ -8,7 +9,7 @@ from .utils import compute_river_length, compute_strahler, filter_rivers_by_para
 def build_rivers_by_object_filtered(
     end_y,
     filters,
-    rivers_by_object_filtered_path: str,
+    rivers_by_object_filtered_path: Path,
 ) -> QgsVectorLayer:
     segs = compute_river_length(end_y)  # поле 'length'
     segs = compute_strahler(segs)  # поле 'strahler_order'
@@ -65,7 +66,7 @@ def build_rivers_by_object_filtered(
         {
             "INPUT": segs,
             "FIELD": ["group_id"],
-            "OUTPUT": rivers_by_object_filtered_path,
+            "OUTPUT": str(rivers_by_object_filtered_path),
         },
     )
     dissolved = QgsVectorLayer(result["OUTPUT"], "rivers_by_object", "ogr")
@@ -113,13 +114,13 @@ def build_rivers_by_object_filtered(
 
     QgsVectorLayerExporter.exportLayer(
         dissolved,
-        rivers_by_object_filtered_path,
+        str(rivers_by_object_filtered_path),
         "GPKG",
         dissolved.crs(),
         False,
     )
     final_layer = QgsVectorLayer(
-        rivers_by_object_filtered_path,
+        str(rivers_by_object_filtered_path),
         "rivers_by_object",
         "ogr",
     )

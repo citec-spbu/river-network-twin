@@ -1,3 +1,4 @@
+from pathlib import Path
 import networkx as nx
 from qgis.core import (
     QgsFeature,
@@ -14,11 +15,11 @@ from qgis.PyQt.QtCore import QVariant
 
 def build_watershed_boundaries(
     lcp_layer,
-    watershed_boundaries_path,
+    watershed_boundaries_path: Path,
     layer_name: str = "watershed_boundaries",
 ):
     # Собираем граф из сегментов линий
-    G = nx.Graph()
+    g = nx.Graph()
     node_coords = {}
 
     for feat in lcp_layer.getFeatures():
@@ -29,7 +30,7 @@ def build_watershed_boundaries(
                 p1, p2 = line[i], line[i + 1]
                 n1 = (round(p1.x(), 3), round(p1.y(), 3))
                 n2 = (round(p2.x(), 3), round(p2.y(), 3))
-                G.add_edge(n1, n2)
+                g.add_edge(n1, n2)
                 node_coords[n1] = p1
                 node_coords[n2] = p2
 
@@ -45,7 +46,7 @@ def build_watershed_boundaries(
     options.layerName = layer_name
 
     QgsVectorFileWriter.create(
-        watershed_boundaries_path,
+        str(watershed_boundaries_path),
         fields,
         QgsWkbTypes.Polygon,
         crs,
@@ -53,17 +54,24 @@ def build_watershed_boundaries(
         options,
     )
 
-    uri = f"{watershed_boundaries_path}|layername={layer_name}"
+    uri = f"{str(watershed_boundaries_path)}|layername={layer_name}"
     final_layer = QgsVectorLayer(uri, layer_name, "ogr")
+
+    final_layer.startEditing()
     prov = final_layer.dataProvider()
 
     comp_id = 0
-    for comp in nx.connected_components(G):
-        subG = G.subgraph(comp)
-        D = nx.DiGraph()
-        D.add_edges_from(subG.edges())
-        D.add_edges_from([(v, u) for u, v in subG.edges()])
-        cycles = list(nx.simple_cycles(D))
+    for comp in nx.connected_components(g):
+        # Компонент с < 3 узлами не может содержать полигон
+        if len(comp) < 3:
+            continue
+
+        sub_g = g.subgraph(comp)
+        if not nx.cycle_basis(sub_g):
+            continue
+
+        d = sub_g.to_directed()
+        cycles = list(nx.simple_cycles(d))
 
         max_area = 0.0
         best_geom = None
@@ -72,11 +80,14 @@ def build_watershed_boundaries(
             pts = [node_coords[n] for n in cycle]
             if len(pts) < 3:
                 continue
+
             if pts[0] != pts[-1]:
                 pts.append(pts[0])
+
             poly_geom = QgsGeometry.fromPolygonXY([pts])
             if not poly_geom.isGeosValid() or poly_geom.isEmpty():
                 continue
+
             area = poly_geom.area()
             if area > max_area:
                 max_area = area
@@ -87,8 +98,10 @@ def build_watershed_boundaries(
             feat.setFields(fields)
             feat.setAttribute("comp_id", comp_id)
             feat.setGeometry(best_geom)
-            prov.addFeature(feat)
+            prov.addFeatures([feat])
             comp_id += 1
 
+    final_layer.commitChanges()
     final_layer.updateExtents()
+    final_layer.triggerRepaint()
     return final_layer

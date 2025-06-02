@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 from typing import Any
 
 import processing
@@ -14,25 +14,19 @@ from qgis.core import (
 from qgis.PyQt.QtWidgets import QInputDialog, QMessageBox
 
 
-def set_project_crs():
-    """
-    Устанавливает систему координат проекта на EPSG:3857 (Pseudo-Mercator).
-    """
+def set_project_crs() -> None:
+    """Устанавливает систему координат проекта на EPSG:3857 (Pseudo-Mercator)."""
     crs = QgsCoordinateReferenceSystem("EPSG:3857")
     QgsProject.instance().setCrs(crs)
 
 
-def enable_processing_algorithms():
-    """
-    Включает встроенные алгоритмы обработки QGIS.
-    """
+def enable_processing_algorithms() -> None:
+    """Включает встроенные алгоритмы обработки QGIS."""
     QgsApplication.processingRegistry().addProvider(QgsNativeAlgorithms())
 
 
-def add_opentopo_layer():
-    """
-    Добавляет слой OpenTopoMap в проект QGIS.
-    """
+def add_opentopo_layer() -> None:
+    """Добавляет слой OpenTopoMap в проект QGIS."""
     opentopo_url = (
         "type=xyz&zmin=0&zmax=21&url=https://tile.opentopomap.org/{z}/{x}/{y}.png"
     )
@@ -41,10 +35,7 @@ def add_opentopo_layer():
 
 
 def get_coordinates():
-    """
-    Координаты озера в системе координат EPSG:3857
-    x_3857, y_3857 = 4316873, 7711643
-    """
+    """Координаты озера в системе координат EPSG:3857 x_3857, y_3857 = 4316873, 7711643."""
     x, ok_x = QInputDialog.getDouble(
         None,
         "Координата X",
@@ -79,17 +70,13 @@ def get_coordinates():
 
 
 def transform_coordinates(x, y):
-    """
-    Преобразовать координаты EPSG:3857 в широту и долготу (EPSG:4326)
-    """
+    """Преобразовать координаты EPSG:3857 в широту и долготу (EPSG:4326)."""
     transformer = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
     return transformer.transform(x, y)
 
 
-def download_dem(bbox, project_folder):
-    """
-    Загружает DEM с OpenTopography API по заданному bounding box.
-    """
+def download_dem(bbox, project_folder: Path):
+    """Загружает DEM с OpenTopography API по заданному bounding box."""
     api_key = "c1fcbd0b2f691c736e3bf8c43e52a54d"
     url = (
         f"https://portal.opentopography.org/API/globaldem?"
@@ -105,23 +92,22 @@ def download_dem(bbox, project_folder):
             None,
             "Ошибка загрузки DEM",
         )
-        raise Exception("Ошибка загрузки DEM")
+        msg = "Ошибка загрузки DEM"
+        raise Exception(msg)
 
-    output_path = os.path.join(project_folder, "srtm_output.tif")
-    with open(output_path, "wb") as f:
+    output_path = Path(project_folder) / "srtm_output.tif"
+    with output_path.open("wb") as f:
         f.write(response.content)
 
     return output_path
 
 
-def reproject_dem(dem_path):
-    """
-    Репроецирует DEM из EPSG:4326 в EPSG:3857.
-    """
+def reproject_dem(dem_path: Path):
+    """Репроецирует DEM из EPSG:4326 в EPSG:3857."""
     return processing.run(
         "gdal:warpreproject",
         {
-            "INPUT": dem_path,
+            "INPUT": str(dem_path),
             "SOURCE_CRS": QgsCoordinateReferenceSystem("EPSG:4326"),
             "TARGET_CRS": QgsCoordinateReferenceSystem("EPSG:3857"),
             "RESAMPLING": 0,
@@ -138,16 +124,14 @@ def reproject_dem(dem_path):
     )["OUTPUT"]
 
 
-def add_dem_layer(dem_path):
-    """
-    Добавляет загруженный DEM слой в проект QGIS.
-    """
-    dem_layer = QgsRasterLayer(dem_path, "SRTM DEM Layer")
+def add_dem_layer(dem_path: Path):
+    """Добавляет загруженный DEM слой в проект QGIS."""
+    dem_layer = QgsRasterLayer(str(dem_path), "SRTM DEM Layer")
     QgsProject.instance().addMapLayer(dem_layer)
     return dem_layer
 
 
-def get_main_def(project_folder) -> Any:
+def get_main_def(project_folder: Path) -> Any:
     set_project_crs()
     enable_processing_algorithms()
     add_opentopo_layer()
@@ -159,5 +143,5 @@ def get_main_def(project_folder) -> Any:
     longitude, latitude = transform_coordinates(x, y)
     bbox = [longitude - 0.5, latitude - 0.5, longitude + 0.5, latitude + 0.5]
 
-    dem_path = download_dem(bbox, project_folder)
+    dem_path: Path = download_dem(bbox, project_folder)
     return reproject_dem(dem_path), dem_path

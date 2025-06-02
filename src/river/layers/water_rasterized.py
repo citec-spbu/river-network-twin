@@ -1,15 +1,20 @@
+from pathlib import Path
 import processing
-from qgis.core import QgsCoordinateReferenceSystem
 from osgeo import gdal
+from qgis.core import QgsCoordinateReferenceSystem
 
 
 def build_water_rasterized(
-    rivers_path, water_path, dem_path, output_path, rivers_width=0.0003
+    rivers_path: Path,
+    water_path: Path,
+    dem_path: Path,
+    output_path,
+    rivers_width=0.0003,
 ):
     buffered_rivers = processing.run(
         "native:buffer",
         {
-            "INPUT": rivers_path,
+            "INPUT": str(rivers_path),
             "DISTANCE": rivers_width,
             "SEGMENTS": 5,
             "END_CAP_STYLE": 0,
@@ -25,7 +30,7 @@ def build_water_rasterized(
         "native:union",
         {
             "INPUT": buffered_rivers,
-            "OVERLAY": water_path,
+            "OVERLAY": str(water_path),
             "OVERLAY_FIELDS_PREFIX": "",
             "OUTPUT": "TEMPORARY_OUTPUT",
             "GRID_SIZE": None,
@@ -39,7 +44,7 @@ def build_water_rasterized(
 
     mask = processing.run(
         "native:polygonfromlayerextent",
-        {"INPUT": dem_path, "ROUND_TO": 0, "OUTPUT": "TEMPORARY_OUTPUT"},
+        {"INPUT": str(dem_path), "ROUND_TO": 0, "OUTPUT": "TEMPORARY_OUTPUT"},
     )["OUTPUT"]
 
     merged_rivers_water = processing.run(
@@ -52,7 +57,7 @@ def build_water_rasterized(
         },
     )["OUTPUT"]
 
-    dem_dataset = gdal.Open(dem_path)
+    dem_dataset = gdal.Open(str(dem_path))
 
     if dem_dataset:
         width = dem_dataset.RasterXSize
@@ -70,7 +75,7 @@ def build_water_rasterized(
             "UNITS": 0,
             "WIDTH": width,
             "HEIGHT": height,
-            "EXTENT": dem_path,
+            "EXTENT": str(dem_path),
             "NODATA": 0,
             "OPTIONS": None,
             "DATA_TYPE": 5,
@@ -81,7 +86,7 @@ def build_water_rasterized(
         },
     )["OUTPUT"]
 
-    rasterized = processing.run(
+    return processing.run(
         "gdal:warpreproject",
         {
             "INPUT": rasterized,
@@ -96,8 +101,6 @@ def build_water_rasterized(
             "TARGET_EXTENT_CRS": None,
             "MULTITHREADING": False,
             "EXTRA": "",
-            "OUTPUT": output_path,
+            "OUTPUT": str(output_path),
         },
     )["OUTPUT"]
-
-    return rasterized

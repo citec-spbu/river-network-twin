@@ -1,8 +1,11 @@
 import processing
+from pathlib import Path
 from qgis.core import QgsVectorLayer
 
 
-def build_rivers_and_points_layer(end_y, rivers_and_points_path: str) -> QgsVectorLayer:
+def build_rivers_and_points_layer(
+    end_y, rivers_and_points_path: Path
+) -> QgsVectorLayer:
     max_z = processing.run(
         "native:fieldcalculator",
         {
@@ -12,7 +15,7 @@ def build_rivers_and_points_layer(end_y, rivers_and_points_path: str) -> QgsVect
             "FIELD_LENGTH": 0,
             "FIELD_PRECISION": 0,
             "FORMULA": 'if("start_z" > "end_z", "start_z", "end_z")',
-            "OUTPUT": rivers_and_points_path,
+            "OUTPUT": str(rivers_and_points_path),
         },
     )["OUTPUT"]
 

@@ -1,3 +1,4 @@
+from pathlib import Path
 import processing
 from qgis.core import (
     QgsFeature,
@@ -13,7 +14,7 @@ from qgis.PyQt.QtCore import QVariant
 
 
 # Определить максимальную высоту для каждой линии
-def determine_maximum_heights(end_y, project_folder):
+def determine_maximum_heights(end_y, project_folder: Path):
     max_z = processing.run(
         "native:fieldcalculator",
         {
@@ -23,7 +24,7 @@ def determine_maximum_heights(end_y, project_folder):
             "FIELD_LENGTH": 0,
             "FIELD_PRECISION": 0,
             "FORMULA": 'if("start_z" > "end_z", "start_z", "end_z")',
-            "OUTPUT": f"{project_folder}rivers_with_points.gpkg",
+            "OUTPUT": str(project_folder / "rivers_with_points.gpkg"),
         },
     )["OUTPUT"]
 
@@ -45,7 +46,7 @@ def create_max_height_points_layer():
 
 
 # Добавить новые поля для хранения высотных данных
-def add_elevation_fields(layer):
+def add_elevation_fields(layer) -> None:
     layer_provider = layer.dataProvider()
     layer_provider.addAttributes([QgsField("start_z", QVariant.Double)])
     layer_provider.addAttributes([QgsField("end_z", QVariant.Double)])
@@ -53,7 +54,7 @@ def add_elevation_fields(layer):
 
 
 # Начать редактирование и заполнение значений высоты
-def populate_elevation_data(layer, dem_layer):
+def populate_elevation_data(layer, dem_layer) -> None:
     layer.startEditing()
     line_provider = layer.dataProvider()
 
@@ -92,11 +93,11 @@ def populate_elevation_data(layer, dem_layer):
     layer.commitChanges()
 
 
-def calculate_coordinates(layer_path, project_folder):
+def calculate_coordinates(layer_path: Path, project_folder: Path):
     start_x = processing.run(
         "native:fieldcalculator",
         {
-            "INPUT": layer_path,
+            "INPUT": str(layer_path),
             "FIELD_NAME": "start_x",
             "FIELD_TYPE": 0,
             "FIELD_LENGTH": 0,
@@ -141,14 +142,14 @@ def calculate_coordinates(layer_path, project_folder):
             "FIELD_LENGTH": 0,
             "FIELD_PRECISION": 0,
             "FORMULA": "y(end_point($geometry))",
-            "OUTPUT": f"{project_folder}rivers_with_points.gpkg",
+            "OUTPUT": str(project_folder / "rivers_with_points.gpkg"),
         },
     )["OUTPUT"]
 
 
 # Сохранить и добавить заполненные области водосбора в проект
-def add_basins_layer(project_folder):
-    basins = QgsRasterLayer(f"{project_folder}basins.sdat", "basins")
+def add_basins_layer(project_folder: Path) -> None:
+    basins = QgsRasterLayer(str(project_folder / "basins.sdat"), "basins")
     QgsProject.instance().addMapLayer(basins)
 
 
@@ -171,7 +172,7 @@ def download_and_add_layer(url, layer_name):
 
 
 # Объединить слои рек и ручьев
-def merge_and_dissolve_layers(layers, project_folder):
+def merge_and_dissolve_layers(layers, project_folder: Path):
     merged = processing.run(
         "qgis:mergevectorlayers",
         {"LAYERS": layers, "CRS": layers[0].crs(), "OUTPUT": "TEMPORARY_OUTPUT"},
@@ -187,26 +188,26 @@ def merge_and_dissolve_layers(layers, project_folder):
     )["OUTPUT"]
     return processing.run(
         "native:multiparttosingleparts",
-        {"INPUT": dissolved, "OUTPUT": f"{project_folder}merge_result.gpkg"},
+        {"INPUT": dissolved, "OUTPUT": str(project_folder / "merge_result.gpkg")},
     )["OUTPUT"]
 
 
 # Использовать SAGA Fill Sinks для извлечения водосборов
-def fill_sinks(reprojected_relief, project_folder):
+def fill_sinks(reprojected_relief, project_folder: Path):
     return processing.run(
         "sagang:fillsinkswangliu",
         {
             "ELEV": reprojected_relief,
             "FILLED": "TEMPORARY_OUTPUT",
             "FDIR": "TEMPORARY_OUTPUT",
-            "WSHED": f"{project_folder}basins.sdat",
+            "WSHED": str(project_folder / "basins.sdat"),
             "MINSLOPE": 0.01,
         },
     )["WSHED"]
 
 
 # Получить ссылки на слои линий и точек
-def process_maximum_height_points(point_layer):
+def process_maximum_height_points(point_layer) -> None:
     line_layer_name = "rivers_and_points"
     layers = QgsProject.instance().mapLayersByName(line_layer_name)
     layer = layers[0]

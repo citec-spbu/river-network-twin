@@ -1,3 +1,5 @@
+from pathlib import Path
+from typing import Union
 import processing
 from qgis.core import QgsField, QgsVectorLayer
 from qgis.PyQt.QtCore import QVariant
@@ -9,7 +11,7 @@ def load_quickosm_layer(
     key,
     value,
     extent,
-    output_path="TEMPORARY_OUTPUT",
+    output_path: Union[str, Path] = "TEMPORARY_OUTPUT",
     quickosm_layername="lines",
 ):
     query = processing.run(
@@ -25,7 +27,7 @@ def load_quickosm_layer(
         "native:filedownloader",
         {
             "URL": query["OUTPUT_URL"],
-            "OUTPUT": output_path,
+            "OUTPUT": str(output_path),
         },
     )["OUTPUT"]
     return iface.addVectorLayer(
