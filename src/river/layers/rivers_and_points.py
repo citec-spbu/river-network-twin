@@ -7,11 +7,11 @@ def build_rivers_and_points_layer(
     end_y, rivers_and_points_path: Path
 ) -> QgsVectorLayer:
     """Строит слой рек и точек с максимальными значениями высоты.
-    
+
     Args:
         end_y: Входной слой с данными о высотах
         rivers_and_points_path: Путь для сохранения результата
-        
+
     Returns:
         QgsVectorLayer: Слой рек и точек
     """

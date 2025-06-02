@@ -365,13 +365,13 @@ def add_forest_feature(filtered_layer, forest_provider, forest_layer, colors, pr
     total_features = filtered_layer.featureCount()
     categories = []
 
-    for _i, feature in enumerate(filtered_layer.getFeatures(), start=1):
+    for step_index, feature in enumerate(filtered_layer.getFeatures(), start=1):
         if progress.was_canceled():
             return None
 
         if not progress.update(
-            10 + int(30 * _i / total_features),
-            f"Добавление {_i}/{total_features}",
+            10 + int(30 * step_index / total_features),
+            f"Добавление {step_index}/{total_features}",
         ):
             return None
 
@@ -379,13 +379,15 @@ def add_forest_feature(filtered_layer, forest_provider, forest_layer, colors, pr
         if not geometry.isEmpty():
             forest_feature = QgsFeature()
             forest_feature.setGeometry(geometry)
-            forest_feature.setAttributes([_i])
+            forest_feature.setAttributes([step_index])
             forest_provider.addFeatures([forest_feature])
 
-            color = colors[_i % len(colors)]
+            color = colors[step_index % len(colors)]
             symbol = QgsSymbol.defaultSymbol(forest_layer.geometryType())
             symbol.setColor(color)
-            category = QgsRendererCategory(_i, symbol, f"Лесополоса {_i}")
+            category = QgsRendererCategory(
+                step_index, symbol, f"Лесополоса {step_index}"
+            )
             categories.append(category)
 
     return categories

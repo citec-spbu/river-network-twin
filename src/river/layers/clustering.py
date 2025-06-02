@@ -260,7 +260,7 @@ def preparing_data_for_clustering(
     )
     if not final_layer.isValid():
         msg = "Слой не загружен!"
-        raise Exception(msg)
+        raise RuntimeError(msg)
     return final_layer
 
 
@@ -381,5 +381,5 @@ def assign_clusters(data_for_clustering, point_layer, points_and_clusters_path: 
     )
     if not final_layer.isValid():
         msg = "Слой не загружен!"
-        raise Exception(msg)
+        raise RuntimeError(msg)
     return final_layer

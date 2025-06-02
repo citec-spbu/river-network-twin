@@ -90,10 +90,10 @@ def download_dem(bbox, project_folder: Path):
     if response.status_code != 200:
         QMessageBox.critical(
             None,
-            "Ошибка загрузки DEM",
+            f"Ошибка загрузки DEM: HTTP {response.status_code}",
         )
-        msg = "Ошибка загрузки DEM"
-        raise Exception(msg)
+        msg = f"Ошибка загрузки DEM: HTTP {response.status_code}"
+        raise RuntimeError(msg)
 
     output_path = Path(project_folder) / "srtm_output.tif"
     with output_path.open("wb") as f:

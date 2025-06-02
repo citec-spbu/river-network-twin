@@ -114,10 +114,14 @@ class CustomPathBuilder:
 
             # Конвертируем в пиксели
             start_i, start_j = coord_to_pixel(
-                start_3857.x(), start_3857.y(), gt, n_rows, n_cols
+                start_3857.x(),
+                start_3857.y(),
+                gt,
             )
             end_i, end_j = coord_to_pixel(
-                end_3857.x(), end_3857.y(), gt, n_rows, n_cols
+                end_3857.x(),
+                end_3857.y(),
+                gt,
             )
 
             # Проверяем, что точки находятся в пределах растра
