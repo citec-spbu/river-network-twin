@@ -1,7 +1,6 @@
+import queue
 import numpy as np
 from osgeo import gdal
-import queue
-import os
 from qgis.core import (
     QgsVectorLayer,
     QgsProcessing

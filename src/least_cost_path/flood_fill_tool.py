@@ -69,13 +69,17 @@ class CreateRastrAreasAlgorithm(QgsProcessingAlgorithm):
 
         output_raster = self.parameterAsOutputLayer(parameters, self.OUTPUT_RASTER, context)
         
-        # Выполняем заливку (min_area передаётся напрямую)
-        flood_fill_areas(
-            raster_layer.source(),
-            vector_layer.source(),
-            output_raster,
-            feedback
-        )
+        # Создаём растровый слой водораздела
+        try:
+            flood_fill_areas(
+                raster_layer.source(),
+                vector_layer.source(),
+                output_raster,
+                feedback
+            )
+        except Exception as e:
+            feedback.reportError(self.tr("Ошибка при обработке растра: ") + str(e), True)
+            return {}
         
         
         
@@ -148,13 +152,17 @@ class FloodFillPostProcessing(QgsProcessingAlgorithm):
         min_area = self.parameterAsDouble(parameters, self.MIN_AREA, context)
         output_vector = self.parameterAsOutputLayer(parameters, self.OUTPUT_VECTOR, context)
         
-        # Вызываем нашу функцию
-        result = process_flood_fill(
-            input_raster.source(),
-            output_vector,
-            min_area,
-            feedback
-        )
+        # Вызываем нашу функцию        
+        try:
+            result = process_flood_fill(
+                input_raster.source(),
+                output_vector,
+                min_area,
+                feedback
+            )
+        except Exception as e:
+            feedback.reportError(self.tr("Ошибка при создании полигонов водораздела растра: ") + str(e), True)
+            return {}
         
         # Возвращаем результат
         return {self.OUTPUT_VECTOR: result}

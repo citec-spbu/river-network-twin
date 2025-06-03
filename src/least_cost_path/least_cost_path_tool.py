@@ -88,7 +88,7 @@ class LeastCostPathAnalysisAlgorithm(QgsProcessingAlgorithm):
 
         feedback.pushInfo(self.tr("Начало анализа путей наименьшей стоимости..."))
 
-        # Вызываем основную функцию
+        # Вызываем основную функцию        
         try:
             lcp_layer, moved_sources_layer = least_cost_path_analysis(
                 points_layer,
@@ -96,9 +96,14 @@ class LeastCostPathAnalysisAlgorithm(QgsProcessingAlgorithm):
                 water_raster_layer,
                 feedback
             )
-        except Exception as e:
-            feedback.reportError(self.tr(f"Ошибка при выполнении анализа: {str(e)}"), True)
+        except ValueError as e:
+            error_msg = self.tr("Ошибка при выполнении анализа: ") + str(e)
+            feedback.reportError(error_msg, True)
             return {}
+        except Exception as e:
+            error_msg = self.tr("Неожиданная ошибка: ") + str(e)
+            feedback.reportError(error_msg, True)
+            raise
 
         feedback.pushInfo(self.tr("Анализ успешно завершен!"))
         

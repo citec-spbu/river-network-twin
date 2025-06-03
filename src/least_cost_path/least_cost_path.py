@@ -110,7 +110,7 @@ def least_cost_path_analysis(
             # Удаляем временный файл при ошибке
             if os.path.exists(dem_reprojected):
                 os.remove(dem_reprojected)
-            raise Exception(f"Ошибка подготовки DEM: {str(e)}")
+            raise Exception(f"Ошибка подготовки DEM: {str(e)}") from e
 
 
         ds3857 = gdal.Open(str(dem_reprojected))
@@ -152,7 +152,7 @@ def least_cost_path_analysis(
 
         # Создаем слой перемещенных источников (в памяти)
         moved_sources_layer = QgsVectorLayer(
-            f"Point?crs=EPSG:3857", 
+            "Point?crs=EPSG:3857", 
             "Moved sources", 
             "memory"
         )
@@ -188,10 +188,6 @@ def least_cost_path_analysis(
         QgsProject.instance().addMapLayer(moved_sources_layer)
         
         arr_water = None
-
-        # Создаем временный файл с расширением .gpkg
-        temp_file_lcp = tempfile.NamedTemporaryFile(suffix='.gpkg', delete=False)
-        temp_file_lcp.close()  # Закрываем файл, чтобы его можно было использовать
 
         # Создаем временный файл в директории QGIS
         temp_dir = QgsProcessingUtils.tempFolder()
@@ -358,8 +354,8 @@ def least_cost_path_analysis(
         # Добавляем слой в проект (если нужно)
         QgsProject.instance().addMapLayer(watershed_layer)
 
-            # Очистка временных файлов
-        for temp_file in [dem_reprojected, temp_file_lcp]:
+    # Очистка временных файлов
+        for temp_file in [dem_reprojected, dem_pooled]:
             try:
                 os.remove(temp_file)
             except:

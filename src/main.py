@@ -96,10 +96,7 @@ class CustomDEMPlugin:
         # Выгрузка инструмента заливки
         if self.provider:
             QgsApplication.processingRegistry().removeProvider(self.provider)
-        if self.flood_fill_action:
-            self.iface.removePluginMenu("Гидрология", self.flood_fill_action)
-            self.iface.removeToolBarIcon(self.flood_fill_action)
-            del self.flood_fill_action
+        
 
     def run_plugin(self) -> None:
         # Код плагина
