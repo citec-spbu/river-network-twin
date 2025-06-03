@@ -1,57 +1,60 @@
-import os
-import glob
+from pathlib import Path
+from typing import Optional
+
 from qgis.core import QgsProject
 from qgis.PyQt.QtWidgets import (
-    QFileDialog,
-    QMessageBox,
     QAction,
-    QPushButton,
-    QDialog,
-    QVBoxLayout,
-    QLabel,
     QCheckBox,
+    QDialog,
+    QFileDialog,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
 )
 from qgis.utils import iface
-from .river.river import river
-from .least_cost_path.least_cost_path import least_cost_path_analysis
-from .forest import forest
+
 from .custom_path import CustomPathBuilder
+from .forest import forest
+from .least_cost_path.least_cost_path import least_cost_path_analysis
+from .river.river import river
+
 
 class CustomDEMPlugin:
-    def __init__(self, iface):
+    def __init__(self, iface) -> None:
         self.iface = iface
-        self.project_folder = ""
+        self.project_folder: Optional[Path] = None
         self.plugin_name = "RiverNETWORK"
         self.custom_path_builder = None
 
-    def initGui(self):
+    def initGui(self) -> None:
         self.action = QAction(self.plugin_name, self.iface.mainWindow())
         self.action.triggered.connect(self.run_plugin)
         self.iface.addToolBarIcon(self.action)
         self.iface.addPluginToMenu("&RiverNETWORK", self.action)
 
-    def unload(self):
-        """
-        Удаление плагина
-        """
+    def unload(self) -> None:
+        """Удаление плагина."""
         self.iface.removeToolBarIcon(self.action)
         self.iface.removePluginMenu("&RiverNETWORK", self.action)
         if self.custom_path_builder:
             self.custom_path_builder.cleanup()
             self.custom_path_builder = None
 
-    def run_plugin(self):
+    def run_plugin(self) -> None:
         # Код плагина
         folder = QFileDialog.getExistingDirectory(None, "Выберите рабочую папку")
         if not folder:
             QMessageBox.warning(
-                None, "Ошибка", "Рабочая папка не выбрана. Работа плагина прекращена."
+                None,
+                "Ошибка",
+                "Рабочая папка не выбрана. Работа плагина прекращена.",
             )
             return
 
         # Создать папку "work" внутри выбранной папки
-        self.project_folder = os.path.join(folder, "work/")
-        os.makedirs(self.project_folder, exist_ok=True)
+        self.project_folder = Path(folder) / "work"
+        self.project_folder.mkdir(exist_ok=True, parents=True)
         QMessageBox.information(
             None,
             "Папка установлена",
@@ -59,7 +62,7 @@ class CustomDEMPlugin:
         )
         self.run_programm()
 
-    def show_layer_visibility_dialog(self):
+    def show_layer_visibility_dialog(self) -> None:
         # Создать диалоговое окно
         dialog = QDialog()
         dialog.setWindowTitle("Выбор слоев")
@@ -80,7 +83,7 @@ class CustomDEMPlugin:
             if layer_tree_node:  # Проверка наличия слоя в дереве
                 checkbox = QCheckBox(layer.name())
                 checkbox.setChecked(
-                    layer_tree_node.isVisible()
+                    layer_tree_node.isVisible(),
                 )  # Получить настоящую видимость
                 layout.addWidget(checkbox)
                 checkboxes[layer_tree_node] = checkbox
@@ -89,7 +92,7 @@ class CustomDEMPlugin:
         apply_button = QPushButton("Применить")
         layout.addWidget(apply_button)
 
-        def apply_layer_visibility():
+        def apply_layer_visibility() -> None:
             for layer_tree_node, checkbox in checkboxes.items():
                 layer_tree_node.setItemVisibilityChecked(checkbox.isChecked())
             dialog.close()
@@ -102,7 +105,7 @@ class CustomDEMPlugin:
         dialog.exec_()
 
     # Определите основную функцию для диалога
-    def show_choice_dialog(self):
+    def show_choice_dialog(self) -> None:
         # Создание диалогового окна
         dialog = QDialog()
         dialog.setWindowTitle("Выбор функции")
@@ -114,10 +117,14 @@ class CustomDEMPlugin:
 
         # Добавляйте кнопки для различных вариантов
         waterlines_button = QPushButton("Создать речную сеть")
-        waterlines_with_clustering_button = QPushButton("Создать речную сеть с кластеризацией")
+        waterlines_with_clustering_button = QPushButton(
+            "Создать речную сеть с кластеризацией"
+        )
         forest_belts_button = QPushButton("Создать лесополосы")
         cost_path_button = QPushButton("Вычислить путь наименьшей стоимости")
-        cost_path_with_clustering_button = QPushButton("Вычислить путь наименьшей стоимости с кластеризацией")
+        cost_path_with_clustering_button = QPushButton(
+            "Вычислить путь наименьшей стоимости с кластеризацией"
+        )
 
         layout.addWidget(waterlines_button)
         layout.addWidget(waterlines_with_clustering_button)
@@ -126,28 +133,28 @@ class CustomDEMPlugin:
         layout.addWidget(cost_path_with_clustering_button)
 
         # Определение действий для кнопок
-        def create_waterlines():
+        def create_waterlines() -> None:
             dialog.close()
             river(self.project_folder, with_clustering=False)
             self.add_custom_path_button()
 
-        def create_waterlines_with_clustering():
+        def create_waterlines_with_clustering() -> None:
             dialog.close()
             river(self.project_folder, with_clustering=True)
             self.add_custom_path_button()
 
-        def create_forest_belts():
+        def create_forest_belts() -> None:
             dialog.close()
             forest(self.project_folder)
             self.add_custom_path_button()
 
-        def create_cost_path():
+        def create_cost_path() -> None:
             dialog.close()
             river(self.project_folder, with_clustering=False)
             least_cost_path_analysis(self.project_folder)
             self.add_custom_path_button()
 
-        def create_cost_path_with_clustering():
+        def create_cost_path_with_clustering() -> None:
             dialog.close()
             river(self.project_folder, with_clustering=True)
             least_cost_path_analysis(self.project_folder)
@@ -155,22 +162,26 @@ class CustomDEMPlugin:
 
         # Свяжите кнопки с их действиями
         waterlines_button.clicked.connect(create_waterlines)
-        waterlines_with_clustering_button.clicked.connect(create_waterlines_with_clustering)
+        waterlines_with_clustering_button.clicked.connect(
+            create_waterlines_with_clustering
+        )
         forest_belts_button.clicked.connect(create_forest_belts)
         cost_path_button.clicked.connect(create_cost_path)
-        cost_path_with_clustering_button.clicked.connect(create_cost_path_with_clustering)
+        cost_path_with_clustering_button.clicked.connect(
+            create_cost_path_with_clustering
+        )
 
         # Настройка макета и отображение диалогового окна
         dialog.setLayout(layout)
         dialog.exec_()
 
-    def add_custom_path_button(self):
-        """Adds the custom path builder button after algorithm completion"""
+    def add_custom_path_button(self) -> None:
+        """Add the custom path builder button after algorithm completion."""
         if not self.custom_path_builder:
             self.custom_path_builder = CustomPathBuilder(self.project_folder)
         self.custom_path_builder.add_custom_path_button(self.iface)
 
-    def clear_cache(self):
+    def clear_cache(self) -> None:
         project = QgsProject.instance()
         # Перебор всех слоев в проекте
         for layer in list(project.mapLayers().values()):
@@ -185,7 +196,7 @@ class CustomDEMPlugin:
         # Очистка кэша рендеринга
         project.reloadAllLayers()
 
-    def prepare(self):
+    def prepare(self) -> None:
         project = QgsProject.instance()
         # Удалить все слои
         for layer in list(project.mapLayers().values()):
@@ -198,19 +209,22 @@ class CustomDEMPlugin:
         # Очистка кэша рендеринга
         project.reloadAllLayers()
 
-    def _delete_files(self):
-        """
-        Удалить определенные форматы файлов (e.g., shapefiles, GeoTIFFs, etc.)
-        """
-        for file_pattern in ["*.shp", "*.shx", "*.dbf", "*.prj", "*.tif"]:
-            for file_path in glob.glob(os.path.join(self.project_folder, file_pattern)):
-                try:
-                    os.remove(file_path)
-                    print(f"Deleted: {file_path}", flush=True)
-                except Exception as e:
-                    print(f"Error deleting {file_path}: {e}", flush=True)
+    def _delete_files(self) -> None:
+        """Удалить определенные форматы файлов (e.g., shapefiles, GeoTIFFs, etc.)."""
+        file_patterns = ["*.shp", "*.shx", "*.dbf", "*.prj", "*.tif"]
+        files_to_delete: list[Path] = []
+        for pattern in file_patterns:
+            files_to_delete.extend(Path(self.project_folder).glob(pattern))
 
-    def run_programm(self):
+        for file_path in files_to_delete:
+            try:
+                file_path.unlink()
+            except Exception as e:
+                print(f"Error deleting {file_path}: {e}", flush=True)
+            else:
+                print(f"Deleted: {file_path}", flush=True)
+
+    def run_programm(self) -> None:
         # Подготовка к работе
         self.clear_cache()
         self.prepare()

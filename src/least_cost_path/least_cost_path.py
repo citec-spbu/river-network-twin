@@ -1,29 +1,37 @@
 import math
-import os
 import time
-from .layers.output_least_cost_path import build_output_least_cost_path
-from qgis.core import (
-    QgsProject,
-    QgsPointXY,
-    QgsGeometry,
-    QgsSpatialIndex,
-    QgsRasterLayer,
-    QgsVectorLayer,
-    QgsFeature,
-    QgsCoordinateTransform,
-    QgsCoordinateReferenceSystem,
-    QgsVectorFileWriter,
-)
-from qgis.PyQt.QtWidgets import QMessageBox
+from pathlib import Path
+
 import networkit as nk
 from osgeo import gdal
-from ..progress_manager import ProgressManager
+from qgis.core import (
+    QgsCoordinateReferenceSystem,
+    QgsCoordinateTransform,
+    QgsFeature,
+    QgsGeometry,
+    QgsPointXY,
+    QgsProject,
+    QgsRasterLayer,
+    QgsSpatialIndex,
+    QgsVectorFileWriter,
+    QgsVectorLayer,
+)
+from qgis.PyQt.QtWidgets import QMessageBox
+from qgis.utils import iface
+
+from src.least_cost_path.layers.output_least_cost_path import (
+    build_output_least_cost_path,
+)
+from src.least_cost_path.layers.watershed_boundaries import build_watershed_boundaries
+from src.progress_manager import ProgressManager
 from src.river.layers.water_rasterized import build_water_rasterized
 
 
-def least_cost_path_analysis(project_folder):
+def least_cost_path_analysis(project_folder: Path) -> None:
     # Инициализация прогресса
-    progress = ProgressManager(title="Анализ оптимальных путей", label="Инициализация...")
+    progress = ProgressManager(
+        title="Анализ оптимальных путей", label="Инициализация..."
+    )
     progress.init_progress(100)
 
     # Переменные для хранения сообщений
@@ -50,11 +58,11 @@ def least_cost_path_analysis(project_folder):
             return
 
         print("Используется DEM в качестве слоя стоимости", flush=True)
-        dem_src = f"{project_folder}/srtm_output.tif"
-        dem_3857 = f"{project_folder}/srtm_output_3857.tif"
+        dem_src = project_folder / "srtm_output.tif"
+        dem_3857 = project_folder / "srtm_output_3857.tif"
         gdal.Warp(
-            dem_3857,
-            dem_src,
+            str(dem_3857),
+            str(dem_src),
             dstSRS="EPSG:3857",
             resampleAlg="bilinear",
             format="GTiff",
@@ -64,14 +72,14 @@ def least_cost_path_analysis(project_folder):
         if not progress.update(15, "Ресемплинг DEM..."):
             return
 
-        dem_pooled = f"{project_folder}/srtm_output_3857_pooled.tif"
-        ds3857 = gdal.Open(dem_3857)
+        dem_pooled = project_folder / "srtm_output_3857_pooled.tif"
+        ds3857 = gdal.Open(str(dem_3857))
         gt3857 = ds3857.GetGeoTransform()
         orig_xres = gt3857[1]
         orig_yres = abs(gt3857[5])
         gdal.Warp(
-            destNameOrDestDS=dem_pooled,
-            srcDSOrSrcDSTab=dem_3857,
+            destNameOrDestDS=str(dem_pooled),
+            srcDSOrSrcDSTab=str(dem_3857),
             xRes=orig_xres * 4,
             yRes=orig_yres * 4,
             resampleAlg="average",
@@ -82,7 +90,7 @@ def least_cost_path_analysis(project_folder):
         if not progress.update(20, "Загрузка слоя стоимости..."):
             return
 
-        cost_layer = QgsRasterLayer(dem_pooled, "DEM Cost Layer")
+        cost_layer = QgsRasterLayer(str(dem_pooled), "DEM Cost Layer")
         if not cost_layer.isValid():
             QMessageBox.warning(
                 None, "Ошибка", "Не удалось загрузить перепроецированный DEM."
@@ -90,13 +98,13 @@ def least_cost_path_analysis(project_folder):
             return
 
         water_rasterized = build_water_rasterized(
-            f"{project_folder}/merge_result.gpkg",
-            QgsProject.instance().mapLayersByName("water")[0].source(),
-            cost_layer.source(),
-            f"{project_folder}/water_rasterized.tif",
+            project_folder / "merge_result.gpkg",
+            Path(QgsProject.instance().mapLayersByName("water")[0].source()),
+            Path(cost_layer.source()),
+            project_folder / "water_rasterized.tif",
             0.001,
         )
-        raster_layer = QgsRasterLayer(water_rasterized, "water_rasterized")
+        raster_layer = QgsRasterLayer(str(water_rasterized), "water_rasterized")
         if raster_layer.isValid():
             QgsProject.instance().addMapLayer(raster_layer)
         else:
@@ -108,10 +116,12 @@ def least_cost_path_analysis(project_folder):
         t_paths_start = time.perf_counter()
 
         # строим граф из cost_layer
-        G, gt, n_rows, n_cols = build_cost_graph(cost_layer.source(), water_rasterized)
+        g, gt, n_rows, n_cols = build_cost_graph(
+            Path(cost_layer.source()), water_rasterized
+        )
 
         fid_to_node = {}
-        terminal_fids = []
+        terminal_nodes_set = set()
         ds_water = gdal.Open(water_rasterized)
         arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
         nodata_water = ds_water.GetRasterBand(1).GetNoDataValue()
@@ -127,7 +137,9 @@ def least_cost_path_analysis(project_folder):
             pt = feat.geometry().asPoint()
             pt3857 = coord_transform.transform(pt)
 
-            i, j = nearest_land(pt3857.x(), pt3857.y(), gt, n_rows, n_cols, arr_water, 2)
+            i, j = nearest_land(
+                pt3857.x(), pt3857.y(), gt, n_rows, n_cols, arr_water, 2
+            )
             if i == -1 or j == -1:
                 continue
             node_idx = i * n_cols + j
@@ -138,70 +150,75 @@ def least_cost_path_analysis(project_folder):
             sources_provider.addFeature(feature)
 
             fid_to_node[feat.id()] = node_idx
-            terminal_fids.append(feat.id())
+            terminal_nodes_set.add(node_idx)
+
+        terminal_nodes = list(terminal_nodes_set)
 
         sources_layer.updateExtents()
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.layerName = "Изолинии"
         options.driverName = "GPKG"
         QgsVectorFileWriter.writeAsVectorFormat(
-            sources_layer, f"{project_folder}/moved_sources.gpkg", options
+            sources_layer, str(project_folder / "moved_sources.gpkg"), options
         )
         # Загрузка слоя
         sources_layer = QgsVectorLayer(
-            f"{project_folder}/moved_sources.gpkg", "Moved sources", "ogr"
+            str(project_folder / "moved_sources.gpkg"), "Moved sources", "ogr"
         )
         QgsProject.instance().addMapLayer(sources_layer)
         arr_water = None
 
-        lcp_layer_path = os.path.join(project_folder, "output_least_cost_path.gpkg")
+        lcp_layer_path = Path(project_folder) / "output_least_cost_path.gpkg"
         lcp_layer = build_output_least_cost_path(lcp_layer_path)
 
         if not progress.update(50, "Расчет оптимальных путей..."):
             return
 
         dp = lcp_layer.dataProvider()
-        total_pairs = len(terminal_fids) * (len(terminal_fids) - 1)
+        total_pairs = len(terminal_nodes) * (len(terminal_nodes) - 1)
         processed_pairs = 0
 
-        for src_idx, src_fid in enumerate(terminal_fids):
+        for i in range(len(terminal_nodes)):
+            src_node = terminal_nodes[i]
             if progress.was_canceled():
                 return
 
-            progress.update(50 + int(20 * src_idx / len(terminal_fids)),
-                            f"Расчет путей из точки {src_idx + 1}/{len(terminal_fids)}")
+            progress.update(
+                50 + int(20 * i / len(terminal_nodes)),
+                f"Расчет путей из точки {i + 1}/{len(terminal_nodes)}",
+            )
 
-            src_node = fid_to_node[src_fid]
-            dijk = nk.distance.Dijkstra(G, src_node)
+            src_node = terminal_nodes[i]
+            dijk = nk.distance.Dijkstra(g, src_node)
             dijk.run()
 
-            for dst_fid in terminal_fids:
-                if dst_fid == src_fid:
-                    continue
-
+            for dst in terminal_nodes[i + 1 :]:
                 processed_pairs += 1
                 if processed_pairs % 10 == 0:
-                    progress.update(50 + int(20 * processed_pairs / total_pairs),
-                                    f"Обработано {processed_pairs}/{total_pairs} пар")
+                    progress.update(
+                        50 + int(20 * processed_pairs / total_pairs),
+                        f"Обработано {processed_pairs}/{total_pairs} пар",
+                    )
                     if progress.was_canceled():
                         return
 
-                dst_node = fid_to_node[dst_fid]
-                node_path = dijk.getPath(dst_node)
+                node_path = dijk.getPath(dst)
                 if not node_path:
                     continue
 
                 # Конвертируем узлы в координаты
-                path_pts = [
-                    QgsPointXY(*pixel_to_coord(u // n_cols, u % n_cols, gt))
-                    for u in node_path
-                ]
-
-                feat_out = QgsFeature(lcp_layer.fields())
-                feat_out.setGeometry(QgsGeometry.fromPolylineXY(path_pts))
-                feat_out["start_id"] = src_fid
-                feat_out["end_id"] = dst_fid
-                dp.addFeature(feat_out)
+                path_pts = []
+                for u in node_path:
+                    if u != node_path[0] and u != node_path[-1]:
+                        if u in terminal_nodes_set:
+                            break
+                    path_pts.append(
+                        QgsPointXY(*pixel_to_coord(u // n_cols, u % n_cols, gt))
+                    )
+                else:
+                    feat_out = QgsFeature(lcp_layer.fields())
+                    feat_out.setGeometry(QgsGeometry.fromPolylineXY(path_pts))
+                    dp.addFeature(feat_out)
 
         lcp_layer.updateExtents()
         QgsProject.instance().addMapLayer(lcp_layer)
@@ -216,7 +233,9 @@ def least_cost_path_analysis(project_folder):
         if not progress.update(75, "Фильтрация путей по высоте..."):
             return
 
-        elevation_layer = QgsRasterLayer(dem_pooled, "SRTM DEM Layer Pooled (3857)")
+        elevation_layer = QgsRasterLayer(
+            str(dem_pooled), "SRTM DEM Layer Pooled (3857)"
+        )
 
         # Фильтрация путей по критерию разницы высот
         paths_to_delete = []
@@ -227,8 +246,10 @@ def least_cost_path_analysis(project_folder):
             if progress.was_canceled():
                 break
 
-            progress.update(75 + int(10 * idx / total_features),
-                            f"Фильтрация по высоте {idx + 1}/{total_features}")
+            progress.update(
+                75 + int(10 * idx / total_features),
+                f"Фильтрация по высоте {idx + 1}/{total_features}",
+            )
 
             geom = feature.geometry()
             min_elev = calculate_minimum_elevation(elevation_layer, geom)
@@ -284,8 +305,10 @@ def least_cost_path_analysis(project_folder):
             if progress.was_canceled():
                 break
 
-            progress.update(90 + int(5 * idx / total_features),
-                            f"Фильтрация по рекам {idx + 1}/{total_features}")
+            progress.update(
+                90 + int(5 * idx / total_features),
+                f"Фильтрация по рекам {idx + 1}/{total_features}",
+            )
 
             geom = feature.geometry()
             if geom.isEmpty():
@@ -303,8 +326,8 @@ def least_cost_path_analysis(project_folder):
                 candidate = rivers_layer.getFeature(cid)
                 if geom.intersects(candidate.geometry()):
                     if not (
-                            start_geom.intersects(candidate.geometry())
-                            or end_geom.intersects(candidate.geometry())
+                        start_geom.intersects(candidate.geometry())
+                        or end_geom.intersects(candidate.geometry())
                     ):
                         paths_to_delete.append(feature.id())
                     break
@@ -316,8 +339,26 @@ def least_cost_path_analysis(project_folder):
             lcp_layer.commitChanges()
             rivers_message = f"Удалено {len(paths_to_delete)} путей, пересекающих реки."
 
-        progress.update(100, "Завершено!")
+        watershed_boundaries_path = Path(project_folder) / "watershed_boundaries.gpkg"
+        progress.finish()
 
+        reply = QMessageBox.question(
+            iface.mainWindow(),
+            "Построить слой водоразделов?",
+            "Хотите построить слой замкнутых путей наибольших по площади?\n"
+            "ВНИМАНИЕ: обработка может занять очень много времени!",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        watershed_layer = build_watershed_boundaries(
+            lcp_layer, watershed_boundaries_path
+        )
+        QgsProject.instance().addMapLayer(watershed_layer)
+
+        return
     finally:
         progress.finish()
 
@@ -328,8 +369,8 @@ def least_cost_path_analysis(project_folder):
             QMessageBox.information(None, "Информация", rivers_message)
 
 
-def build_cost_graph(raster_path, water_layer, eps=1e-6):
-    ds_cost = gdal.Open(raster_path)
+def build_cost_graph(raster_path: Path, water_layer, eps=1e-6):
+    ds_cost = gdal.Open(str(raster_path))
     arr = ds_cost.GetRasterBand(1).ReadAsArray().astype(float)
     ds_water = gdal.Open(water_layer)
     arr_water = ds_water.GetRasterBand(1).ReadAsArray().astype(float)
@@ -337,7 +378,7 @@ def build_cost_graph(raster_path, water_layer, eps=1e-6):
     if nodata_water is not None:
         arr_water[arr_water == nodata_water] = 0
     rows, cols = arr.shape
-    G = nk.Graph(rows * cols, weighted=True, directed=False)
+    g = nk.Graph(rows * cols, weighted=True, directed=False)
 
     # 4 направления от вниз-влево до вправо
     neigh = [
@@ -363,13 +404,13 @@ def build_cost_graph(raster_path, water_layer, eps=1e-6):
                     dh = abs(hu - hv)
                     w = factor * (dh + eps)
                     if arr_water[ni, nj] == 0:
-                        G.addEdge(u, nid(ni, nj), w)
+                        g.addEdge(u, nid(ni, nj), w)
 
     gt = ds_cost.GetGeoTransform()
-    return G, gt, rows, cols
+    return g, gt, rows, cols
 
 
-def coord_to_pixel(x, y, gt, n_rows, n_cols):
+def coord_to_pixel(x, y, gt):
     inv = 1.0 / (gt[1] * gt[5] - gt[2] * gt[4])
     j_float = inv * (gt[5] * (x - gt[0]) - gt[2] * (y - gt[3]))
     i_float = inv * (-gt[4] * (x - gt[0]) + gt[1] * (y - gt[3]))
@@ -387,10 +428,11 @@ def pixel_to_coord(i, j, gt):
 def calculate_minimum_elevation(raster_layer, line_geom):
     provider = raster_layer.dataProvider()
     min_elev = float("inf")
-    if line_geom.isMultipart():
-        lines = line_geom.asMultiPolyline()
-    else:
-        lines = [line_geom.asPolyline()]
+    lines = (
+        line_geom.asMultiPolyline()
+        if line_geom.isMultipart()
+        else [line_geom.asPolyline()]
+    )
     for line in lines:
         for pt in line:
             sample = provider.sample(QgsPointXY(pt.x(), pt.y()), 1)
@@ -402,23 +444,26 @@ def calculate_minimum_elevation(raster_layer, line_geom):
 
 
 def nearest_land(x, y, gt, n_rows, n_cols, water, radius):
-    i, j = coord_to_pixel(x, y, gt, n_rows, n_cols)
+    i, j = coord_to_pixel(x, y, gt)
     if not 0 <= i < n_rows or not 0 <= j < n_cols:
         print(f"({i}, {j})", flush=True)
         return -1, -1
-    l, r = max(0, i - radius), min(i + radius + 1, n_rows)
-    t, b = max(0, j - radius), min(j + radius + 1, n_cols)
 
-    point = (i, j)
-    sqr_distance = -1
+    row_start = max(0, i - radius)
+    row_end = min(i + radius + 1, n_rows)
+    col_start = max(0, j - radius)
+    col_end = min(j + radius + 1, n_cols)
 
-    for u in range(l, r):
-        for v in range(t, b):
-            if water[u, v] == 0:
-                u_c, v_c = pixel_to_coord(u, v, gt)
-                dist = (x - u_c) ** 2 + (y - v_c) ** 2
-                if sqr_distance > dist or sqr_distance == -1:
-                    point = (u, v)
-                    sqr_distance = dist
+    nearest_point = (i, j)
+    min_squared_distance = -1
 
-    return point
+    for row in range(row_start, row_end):
+        for col in range(col_start, col_end):
+            if water[row, col] == 0:
+                coord_x, coord_y = pixel_to_coord(row, col, gt)
+                dist = (x - coord_x) ** 2 + (y - coord_y) ** 2
+                if min_squared_distance > dist or min_squared_distance == -1:
+                    nearest_point = (row, col)
+                    min_squared_distance = dist
+
+    return nearest_point

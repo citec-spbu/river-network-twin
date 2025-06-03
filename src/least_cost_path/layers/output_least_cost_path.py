@@ -1,17 +1,18 @@
+from pathlib import Path
 from qgis.core import (
-    QgsFields,
-    QgsWkbTypes,
     QgsCoordinateReferenceSystem,
+    QgsField,
+    QgsFields,
+    QgsProject,
     QgsVectorFileWriter,
     QgsVectorLayer,
-    QgsField,
-    QgsProject,
+    QgsWkbTypes,
 )
 from qgis.PyQt.QtCore import QVariant
 
 
 def build_output_least_cost_path(
-    point_layer_path,
+    point_layer_path: Path,
     layer_name: str = "Output least cost path",
 ) -> QgsVectorLayer:
     crs = QgsCoordinateReferenceSystem("EPSG:3857")
@@ -32,7 +33,7 @@ def build_output_least_cost_path(
 
     # Создаем GeoPackage-слой
     QgsVectorFileWriter.create(
-        point_layer_path,
+        str(point_layer_path),
         fields,
         QgsWkbTypes.LineString,
         crs,
@@ -41,6 +42,5 @@ def build_output_least_cost_path(
     )
 
     # Открываем и добавляем в проект
-    uri = f"{point_layer_path}|layername={layer_name}"
-    layer = QgsVectorLayer(uri, layer_name, "ogr")
-    return layer
+    uri = f"{str(point_layer_path)}|layername={layer_name}"
+    return QgsVectorLayer(uri, layer_name, "ogr")

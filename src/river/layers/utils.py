@@ -1,7 +1,9 @@
+from pathlib import Path
+from typing import Union
 import processing
-from qgis.utils import iface
-from qgis.core import QgsVectorLayer, QgsField
+from qgis.core import QgsField, QgsVectorLayer
 from qgis.PyQt.QtCore import QVariant
+from qgis.utils import iface
 
 
 def load_quickosm_layer(
@@ -9,7 +11,7 @@ def load_quickosm_layer(
     key,
     value,
     extent,
-    output_path="TEMPORARY_OUTPUT",
+    output_path: Union[str, Path] = "TEMPORARY_OUTPUT",
     quickosm_layername="lines",
 ):
     query = processing.run(
@@ -25,17 +27,20 @@ def load_quickosm_layer(
         "native:filedownloader",
         {
             "URL": query["OUTPUT_URL"],
-            "OUTPUT": output_path,
+            "OUTPUT": str(output_path),
         },
     )["OUTPUT"]
-    layer = iface.addVectorLayer(
-        download_result + f"|layername={quickosm_layername}", layer_name, "ogr"
+    return iface.addVectorLayer(
+        download_result + f"|layername={quickosm_layername}",
+        layer_name,
+        "ogr",
     )
-    return layer
 
 
 def filter_rivers_by_params(
-    rivers_layer, filters, layer_name="rivers_filtered"
+    rivers_layer,
+    filters,
+    layer_name="rivers_filtered",
 ) -> QgsVectorLayer:
     expr_parts = []
     for fld, (op, val) in filters.items():
@@ -119,7 +124,7 @@ def compute_strahler(rivers_layer):
     rivers_layer.startEditing()
     if "strahler_order" not in [f.name() for f in rivers_layer.fields()]:
         rivers_layer.dataProvider().addAttributes(
-            [QgsField("strahler_order", QVariant.Int)]
+            [QgsField("strahler_order", QVariant.Int)],
         )
         rivers_layer.updateFields()
     idx = rivers_layer.fields().indexOf("strahler_order")

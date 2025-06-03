@@ -1,19 +1,19 @@
+from qgis.gui import QgsMapToolEmitPoint, QgsVertexMarker
 from qgis.PyQt.QtCore import pyqtSignal
 from qgis.PyQt.QtGui import QColor
-from qgis.gui import QgsMapToolEmitPoint, QgsVertexMarker
 
 
 class PointSelectionTool(QgsMapToolEmitPoint):
     selection_completed = pyqtSignal(list)
 
-    def __init__(self, canvas, points):
+    def __init__(self, canvas, points) -> None:
         super().__init__(canvas)
         self.points = []
         self.canvas = canvas
         self.markers = []
         self.required_points = points
 
-    def canvasPressEvent(self, event):
+    def canvasPressEvent(self, event) -> None:
         point = self.toMapCoordinates(event.pos())
         self.points.append(point)
 
@@ -27,7 +27,7 @@ class PointSelectionTool(QgsMapToolEmitPoint):
             self.selection_completed.emit(self.points)
             self.cleanup()
 
-    def cleanup(self):
+    def cleanup(self) -> None:
         for marker in self.markers:
             self.canvas.scene().removeItem(marker)
         self.markers = []

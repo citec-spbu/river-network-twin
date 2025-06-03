@@ -1,49 +1,51 @@
-import os
 import math
-from .common import add_dem_layer, get_main_def
-from .progress_manager import ProgressManager
+from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import processing
 from osgeo import gdal
 from pyproj import Transformer
+from PyQt5.QtWidgets import QPushButton
 from qgis.core import (
-    QgsProject,
+    QgsCategorizedSymbolRenderer,
     QgsCoordinateReferenceSystem,
-    QgsPointXY,
-    QgsRasterLayer,
-    QgsVectorLayer,
-    QgsGeometry,
+    QgsFeature,
     QgsField,
     QgsFields,
-    QgsFeature,
-    QgsSymbol,
-    QgsRendererCategory,
-    QgsCategorizedSymbolRenderer,
+    QgsGeometry,
+    QgsPointXY,
     QgsProcessingFeatureSourceDefinition,
+    QgsProject,
+    QgsRendererCategory,
+    QgsSymbol,
+    QgsVectorLayer,
 )
 from qgis.gui import QgsMapToolEmitPoint
-from qgis.PyQt.QtCore import QVariant, QEventLoop, pyqtSignal
+from qgis.PyQt.QtCore import QEventLoop, QVariant, pyqtSignal
 from qgis.PyQt.QtGui import QColor
-from PyQt5.QtWidgets import QPushButton
 from qgis.utils import iface
+
+from .common import add_dem_layer, get_main_def
+from .progress_manager import ProgressManager
 
 
 class PointCollector(QgsMapToolEmitPoint):
-    """
-    Инструмент для сбора точек на карте.
-    """
+    """Инструмент для сбора точек на карте."""
+
     collection_complete = pyqtSignal()
 
-    def __init__(self, canvas):
+    def __init__(self, canvas) -> None:
         super().__init__(canvas)
         self.canvas = canvas
         self.points = []
-        self.point_layer = QgsVectorLayer("Point?crs=EPSG:3857", "Selected Points", "memory")
+        self.point_layer = QgsVectorLayer(
+            "Point?crs=EPSG:3857", "Selected Points", "memory"
+        )
         self.point_provider = self.point_layer.dataProvider()
         QgsProject.instance().addMapLayer(self.point_layer)
 
-    def canvasPressEvent(self, event):
+    def canvasPressEvent(self, event) -> None:
         point = self.toMapCoordinates(event.pos())
         self.points.append(point)
         print(f"Точка выбрана: {point}", flush=True)
@@ -56,23 +58,18 @@ class PointCollector(QgsMapToolEmitPoint):
     def get_points(self):
         return self.points
 
-    def complete_collection(self):
+    def complete_collection(self) -> None:
         self.collection_complete.emit()
 
 
 def create_polygon_from_points(points):
-    """
-    Преобразует список точек в замкнутый полигон.
-    """
+    """Преобразует список точек в замкнутый полигон."""
     qgs_points = [QgsPointXY(pt.x(), pt.y()) for pt in points]
-    polygon = QgsGeometry.fromPolygonXY([qgs_points])
-    return polygon
+    return QgsGeometry.fromPolygonXY([qgs_points])
 
 
 def add_polygon_to_layer(polygon):
-    """
-    Создает в памяти векторный слой с полигоном.
-    """
+    """Создает в памяти векторный слой с полигоном."""
     polygon_layer = QgsVectorLayer("Polygon?crs=EPSG:3857", "Selected Region", "memory")
     polygon_layer_data = polygon_layer.dataProvider()
 
@@ -84,15 +81,19 @@ def add_polygon_to_layer(polygon):
     return polygon_layer
 
 
-def clip_dem_with_polygon(dem_layer, polygon_layer, masked_dem_output_path, project_folder, progress):
-    """
-    Создает буфер и обрезает DEM.
-    """
+def clip_dem_with_polygon(
+    dem_layer,
+    polygon_layer,
+    masked_dem_output_path: Path,
+    project_folder: Path,
+    progress,
+) -> Optional[Path]:
+    """Создает буфер и обрезает DEM."""
     if not progress.update(10, "Создание буфера..."):
         return None
 
     buffer_distance = 100
-    buffered_mask = os.path.join(project_folder, "buffered_mask.shp")
+    buffered_mask = Path(project_folder) / "buffered_mask.shp"
 
     processing.run(
         "native:buffer",
@@ -104,7 +105,7 @@ def clip_dem_with_polygon(dem_layer, polygon_layer, masked_dem_output_path, proj
             "JOIN_STYLE": 0,
             "MITER_LIMIT": 2,
             "DISSOLVE": False,
-            "OUTPUT": buffered_mask,
+            "OUTPUT": str(buffered_mask),
         },
     )
 
@@ -115,61 +116,55 @@ def clip_dem_with_polygon(dem_layer, polygon_layer, masked_dem_output_path, proj
         "gdal:cliprasterbymasklayer",
         {
             "INPUT": dem_layer,
-            "MASK": QgsProcessingFeatureSourceDefinition(buffered_mask, selectedFeaturesOnly=False),
+            "MASK": QgsProcessingFeatureSourceDefinition(
+                str(buffered_mask), selectedFeaturesOnly=False
+            ),
             "CROP_TO_CUTLINE": True,
             "ALL_TOUCHED": True,
             "KEEP_RESOLUTION": True,
-            "OUTPUT": masked_dem_output_path,
+            "OUTPUT": str(masked_dem_output_path),
         },
     )
     return masked_dem_output_path
 
 
-def reproject_dem2(project_folder, progress):
-    """
-    Репроекция DEM в EPSG:3857.
-    """
+def reproject_dem2(project_folder: Path, progress):
+    """Репроекция DEM в EPSG:3857."""
     if not progress.update(10, "Репроекция DEM..."):
         return None
 
-    output_reprojected_path = os.path.join(project_folder, "reprojected_dem.tif")
-    output_path = os.path.join(project_folder, "masked_dem.tif")
+    output_reprojected_path = Path(project_folder) / "reprojected_dem.tif"
+    output_path = Path(project_folder) / "masked_dem.tif"
 
-    reprojected_dem = processing.run(
+    return processing.run(
         "gdal:warpreproject",
         {
-            "INPUT": output_path,
+            "INPUT": str(output_path),
             "TARGET_CRS": QgsCoordinateReferenceSystem("EPSG:3857"),
             "RESAMPLING": 0,
             "NODATA": -9999,
             "TARGET_RESOLUTION": 30,
             "OPTIONS": "",
             "DATA_TYPE": 0,
-            "OUTPUT": output_reprojected_path,
+            "OUTPUT": str(output_reprojected_path),
         },
     )["OUTPUT"]
 
-    return reprojected_dem
 
-
-def load_dem_to_numpy(project_folder, progress):
-    """
-    Загружает DEM в numpy массив.
-    """
+def load_dem_to_numpy(project_folder: Path, progress):
+    """Загружает DEM в numpy массив."""
     if not progress.update(5, "Загрузка DEM..."):
         return None, None
 
-    input_path = os.path.join(project_folder, "masked_dem.tif")
-    dem_raster = gdal.Open(input_path)
+    input_path = Path(project_folder) / "masked_dem.tif"
+    dem_raster = gdal.Open(str(input_path))
     dem_band = dem_raster.GetRasterBand(1)
     dem_data = dem_band.ReadAsArray()
     return dem_data, dem_raster
 
 
 def setting_dem_coordinates(dem_data, dem_raster, progress):
-    """
-    Находит точки с экстремальными высотами.
-    """
+    """Находит точки с экстремальными высотами."""
     if not progress.update(10, "Анализ высот..."):
         return None, None, None
 
@@ -180,11 +175,19 @@ def setting_dem_coordinates(dem_data, dem_raster, progress):
     min_coords = np.unravel_index(np.argmin(dem_data), dem_data.shape)
 
     transform = dem_raster.GetGeoTransform()
-    max_x_4326 = transform[0] + max_coords[1] * transform[1] + max_coords[0] * transform[2]
-    max_y_4326 = transform[3] + max_coords[0] * transform[4] + max_coords[1] * transform[5]
+    max_x_4326 = (
+        transform[0] + max_coords[1] * transform[1] + max_coords[0] * transform[2]
+    )
+    max_y_4326 = (
+        transform[3] + max_coords[0] * transform[4] + max_coords[1] * transform[5]
+    )
 
-    min_x_4326 = transform[0] + min_coords[1] * transform[1] + min_coords[0] * transform[2]
-    min_y_4326 = transform[3] + min_coords[0] * transform[4] + min_coords[1] * transform[5]
+    min_x_4326 = (
+        transform[0] + min_coords[1] * transform[1] + min_coords[0] * transform[2]
+    )
+    min_y_4326 = (
+        transform[3] + min_coords[0] * transform[4] + min_coords[1] * transform[5]
+    )
 
     transformer_to_3857 = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
     max_x_3857, max_y_3857 = transformer_to_3857.transform(max_x_4326, max_y_4326)
@@ -195,9 +198,7 @@ def setting_dem_coordinates(dem_data, dem_raster, progress):
 
 
 def create_temp_vector_layer(progress):
-    """
-    Создает временный слой для точек.
-    """
+    """Создает временный слой для точек."""
     if not progress.update(5, "Создание слоя..."):
         return None
 
@@ -207,9 +208,7 @@ def create_temp_vector_layer(progress):
 
 
 def set_attribute_fields(layer, progress):
-    """
-    Добавляет атрибуты к слою.
-    """
+    """Добавляет атрибуты к слою."""
     if not progress.update(5, "Настройка атрибутов..."):
         return None
 
@@ -221,10 +220,8 @@ def set_attribute_fields(layer, progress):
     return layer
 
 
-def add_points(coordinates, layer, progress):
-    """
-    Добавляет точки в слой.
-    """
+def add_points(coordinates, layer, progress) -> None:
+    """Добавляет точки в слой."""
     if not progress.update(10, "Добавление точек..."):
         return
 
@@ -239,28 +236,26 @@ def add_points(coordinates, layer, progress):
     layer.updateExtents()
 
 
-def calculate(H, J, angle):
-    """
-    Вычисляет параметры для изолиний.
-    """
-    L = H * J
-    hop = L * math.tan(math.radians(angle))
-    return L, hop
+def calculate(h, j, angle):
+    """Вычисляет параметры для изолиний."""
+    length = h * j
+    hop = length * math.tan(math.radians(angle))
+    return length, hop
 
 
-def construct_isolines(reprojected_dem_mask, hop, max_height, project_folder, progress):
-    """
-    Создает изолинии.
-    """
+def construct_isolines(
+    reprojected_dem_mask, hop, max_height, project_folder: Path, progress
+):
+    """Создает изолинии."""
     if not progress.update(20, "Создание изолиний..."):
         return None, None
 
-    contours_output_path = os.path.join(project_folder, "contours_output.shp")
+    contours_output_path = Path(project_folder) / "contours_output.shp"
     try:
         result = processing.run(
             "gdal:contour",
             {
-                "INPUT": reprojected_dem_mask,
+                "INPUT": str(reprojected_dem_mask),
                 "BAND": 1,
                 "INTERVAL": hop,
                 "FIELD_NAME": "ELEV",
@@ -270,56 +265,54 @@ def construct_isolines(reprojected_dem_mask, hop, max_height, project_folder, pr
         )
     except Exception as e:
         print(f"Ошибка при создании изолиний: {e}", flush=True)
-        raise e
+        raise
 
     return contours_output_path, result
 
 
-def add_isolines_to_a_layer(contours_output_path, result, progress):
-    """
-    Добавляет изолинии в слой.
-    """
+def add_isolines_to_a_layer(contours_output_path: Path, result, progress):
+    """Добавляет изолинии в слой."""
     if not progress.update(10, "Добавление изолиний..."):
         return None
 
     contours_output_path = result["OUTPUT"]
-    contours_layer = QgsVectorLayer(contours_output_path, "Contours", "ogr")
+    contours_layer = QgsVectorLayer(str(contours_output_path), "Contours", "ogr")
 
     if not contours_layer.isValid():
-        raise Exception("Не удалось загрузить слой изолиний.")
-
+        msg = "Не удалось загрузить слой изолиний."
+        raise ValueError(msg)
     QgsProject.instance().addMapLayer(contours_layer)
     return contours_layer
 
 
 def filter_isoline(contours_layer, progress):
-    """
-    Фильтрует изолинии по высоте.
-    """
+    """Фильтрует изолинии по высоте."""
     if not progress.update(10, "Фильтрация изолиний..."):
         return None, None
 
-    filtered_layer = QgsVectorLayer("LineString?crs=EPSG:3857", "Filtered Contours", "memory")
+    filtered_layer = QgsVectorLayer(
+        "LineString?crs=EPSG:3857", "Filtered Contours", "memory"
+    )
     filtered_provider = filtered_layer.dataProvider()
     filtered_provider.addAttributes(contours_layer.fields())
     filtered_layer.updateFields()
     return filtered_provider, filtered_layer
 
 
-def adding_isolines_by_height(contours_layer, min_height, max_height, filtered_provider, filtered_layer, progress):
-    """
-    Добавляет изолинии в заданном диапазоне высот.
-    """
+def adding_isolines_by_height(
+    contours_layer, min_height, max_height, filtered_provider, filtered_layer, progress
+) -> None:
+    """Добавляет изолинии в заданном диапазоне высот."""
     total_features = contours_layer.featureCount()
-    processed = 0
 
-    for feature in contours_layer.getFeatures():
+    for i, feature in enumerate(contours_layer.getFeatures(), start=1):
         if progress.was_canceled():
             return
 
-        processed += 1
-        if not progress.update(10 + int(30 * processed / total_features),
-                               f"Фильтрация {processed}/{total_features}"):
+        if not progress.update(
+            10 + int(30 * i / total_features),
+            f"Фильтрация {i}/{total_features}",
+        ):
             return
 
         elevation = feature["ELEV"]
@@ -331,9 +324,7 @@ def adding_isolines_by_height(contours_layer, min_height, max_height, filtered_p
 
 
 def generate_shades(base_color, steps):
-    """
-    Генерирует оттенки цвета.
-    """
+    """Генерирует оттенки цвета."""
     shades = []
     for i in range(steps):
         factor = i / (steps - 1)
@@ -345,25 +336,20 @@ def generate_shades(base_color, steps):
 
 
 def generate_color_pallete():
-    """
-    Создает палитру цветов.
-    """
+    """Создает палитру цветов."""
     base_color = QColor(255, 0, 0)
     base_color1 = QColor(0, 255, 0)
     base_color2 = QColor(0, 0, 255)
     grad_steps = 255
-    colors = (
-            generate_shades(base_color2, grad_steps)
-            + generate_shades(base_color1, grad_steps)
-            + generate_shades(base_color, grad_steps)
+    return (
+        generate_shades(base_color2, grad_steps)
+        + generate_shades(base_color1, grad_steps)
+        + generate_shades(base_color, grad_steps)
     )
-    return colors
 
 
 def add_forests_layer(progress):
-    """
-    Создает слой лесополос.
-    """
+    """Создает слой лесополос."""
     if not progress.update(5, "Создание слоя лесополос..."):
         return None, None
 
@@ -375,42 +361,40 @@ def add_forests_layer(progress):
 
 
 def add_forest_feature(filtered_layer, forest_provider, forest_layer, colors, progress):
-    """
-    Добавляет лесополосы в слой.
-    """
+    """Добавляет лесополосы в слой."""
     total_features = filtered_layer.featureCount()
-    processed = 0
     categories = []
 
-    for feature in filtered_layer.getFeatures():
+    for step_index, feature in enumerate(filtered_layer.getFeatures(), start=1):
         if progress.was_canceled():
             return None
 
-        processed += 1
-        if not progress.update(10 + int(30 * processed / total_features),
-                               f"Добавление {processed}/{total_features}"):
+        if not progress.update(
+            10 + int(30 * step_index / total_features),
+            f"Добавление {step_index}/{total_features}",
+        ):
             return None
 
         geometry = feature.geometry()
         if not geometry.isEmpty():
             forest_feature = QgsFeature()
             forest_feature.setGeometry(geometry)
-            forest_feature.setAttributes([processed])
+            forest_feature.setAttributes([step_index])
             forest_provider.addFeatures([forest_feature])
 
-            color = colors[processed % len(colors)]
+            color = colors[step_index % len(colors)]
             symbol = QgsSymbol.defaultSymbol(forest_layer.geometryType())
             symbol.setColor(color)
-            category = QgsRendererCategory(processed, symbol, f"Лесополоса {processed}")
+            category = QgsRendererCategory(
+                step_index, symbol, f"Лесополоса {step_index}"
+            )
             categories.append(category)
 
     return categories
 
 
-def config_render(forest_layer, categories, progress):
-    """
-    Настраивает отображение слоя.
-    """
+def config_render(forest_layer, categories, progress) -> None:
+    """Настраивает отображение слоя."""
     if not progress.update(10, "Настройка отображения..."):
         return
 
@@ -420,18 +404,18 @@ def config_render(forest_layer, categories, progress):
     QgsProject.instance().addMapLayer(forest_layer)
 
 
-def forest(project_folder):
-    """
-    Основная функция создания лесополос.
-    """
+def forest(project_folder: Path) -> None:
+    """Основная функция создания лесополос."""
     # Загрузка DEM без прогресса
     _, dem_path = get_main_def(project_folder)
-    dem_layer = add_dem_layer(dem_path)  # Измените функцию add_dem_layer, чтобы она возвращала слой
+    dem_layer = add_dem_layer(
+        dem_path
+    )  # Измените функцию add_dem_layer, чтобы она возвращала слой
     if not dem_layer.isValid():
         print("Ошибка загрузки DEM слоя.", flush=True)
         return
 
-    masked_dem_output_path = os.path.join(project_folder, "masked_dem.tif")
+    masked_dem_output_path = Path(project_folder) / "masked_dem.tif"
 
     # Сбор точек без прогресса
     canvas = iface.mapCanvas()
@@ -458,7 +442,9 @@ def forest(project_folder):
         # Обработка собранных точек
         selected_points = collector.get_points()
         if len(selected_points) < 3:
-            print("Для создания полигона необходимо выбрать хотя бы 3 точки.", flush=True)
+            print(
+                "Для создания полигона необходимо выбрать хотя бы 3 точки.", flush=True
+            )
             return
 
         if not progress.update(10, "Создание полигона..."):
@@ -470,7 +456,9 @@ def forest(project_folder):
         if not progress.update(20, "Обрезка DEM..."):
             return
 
-        masked_dem = clip_dem_with_polygon(dem_layer, polygon_layer, masked_dem_output_path, project_folder, progress)
+        masked_dem = clip_dem_with_polygon(
+            dem_layer, polygon_layer, masked_dem_output_path, project_folder, progress
+        )
         if not masked_dem:
             return
 
@@ -485,16 +473,18 @@ def forest(project_folder):
         if dem_data is None:
             return
 
-        coordinates, min_height, max_height = setting_dem_coordinates(dem_data, dem_raster, progress)
+        coordinates, min_height, max_height = setting_dem_coordinates(
+            dem_data, dem_raster, progress
+        )
         if coordinates is None:
             return
 
         points_layer = create_temp_vector_layer(progress)
-        if not points_layer:
+        if points_layer is None:
             return
 
         points_layer = set_attribute_fields(points_layer, progress)
-        if not points_layer:
+        if points_layer is None:
             return
 
         add_points(coordinates, points_layer, progress)
@@ -502,32 +492,46 @@ def forest(project_folder):
         if not progress.update(50, "Создание изолиний..."):
             return
 
-        H, J, angle = 15, 20, 3
-        _, hop = calculate(H, J, angle)
-        contours_output_path, result = construct_isolines(reprojected_dem_mask, hop, max_height, project_folder,
-                                                          progress)
+        h, j, angle = 15, 20, 3
+        _, hop = calculate(h, j, angle)
+        contours_output_path, result = construct_isolines(
+            reprojected_dem_mask,
+            hop,
+            max_height,
+            project_folder,
+            progress,
+        )
         if not contours_output_path:
             return
 
         contours_layer = add_isolines_to_a_layer(contours_output_path, result, progress)
-        if not contours_layer:
+        if contours_layer is None:
             return
 
         filtered_provider, filtered_layer = filter_isoline(contours_layer, progress)
-        if not filtered_provider:
+        if filtered_provider is None:
             return
 
-        adding_isolines_by_height(contours_layer, min_height, max_height, filtered_provider, filtered_layer, progress)
+        adding_isolines_by_height(
+            contours_layer,
+            min_height,
+            max_height,
+            filtered_provider,
+            filtered_layer,
+            progress,
+        )
 
         if not progress.update(70, "Генерация лесополос..."):
             return
 
         forest_layer, forest_provider = add_forests_layer(progress)
-        if not forest_layer:
+        if forest_layer is None:
             return
 
         colors = generate_color_pallete()
-        categories = add_forest_feature(filtered_layer, forest_provider, forest_layer, colors, progress)
+        categories = add_forest_feature(
+            filtered_layer, forest_provider, forest_layer, colors, progress
+        )
         if not categories:
             return
 

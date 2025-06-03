@@ -1,18 +1,31 @@
 import processing
+from pathlib import Path
 from qgis.core import QgsVectorLayer
-from .utils import load_quickosm_layer
+
+from src.river.layers.utils import load_quickosm_layer
 
 
 def build_merged_layer(
-    extent, merged_path: str, rivers_path: str, streams_path: str
+    extent,
+    merged_path: Path,
+    rivers_path: Path,
+    streams_path: Path,
 ) -> QgsVectorLayer:
     # Загрузить реки
     rivers_layer = load_quickosm_layer(
-        "rivers", "waterway", "river", extent, rivers_path
+        "rivers",
+        "waterway",
+        "river",
+        extent,
+        rivers_path,
     )
     # Загрузить ручьи
     streams_layer = load_quickosm_layer(
-        "streams", "waterway", "stream", extent, streams_path
+        "streams",
+        "waterway",
+        "stream",
+        extent,
+        streams_path,
     )
 
     # Объединить слои рек и ручьев
@@ -37,9 +50,9 @@ def build_merged_layer(
         "native:multiparttosingleparts",
         {
             "INPUT": merge_result,
-            "OUTPUT": merged_path,
+            "OUTPUT": str(merged_path),
         },
     )["OUTPUT"]
 
     # Добавить объединенный слой в проект
-    return QgsVectorLayer(merged_path, "rivers_merged", "ogr")
+    return QgsVectorLayer(str(merged_path), "rivers_merged", "ogr")
