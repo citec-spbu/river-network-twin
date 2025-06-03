@@ -15,8 +15,7 @@ class CreateRastrAreasAlgorithm(QgsProcessingAlgorithm):
     Интерактивный инструмент для заливки областей
     """
     INPUT_RASTER = 'INPUT_RASTER'
-    INPUT_VECTOR = 'INPUT_VECTOR'
-    MIN_AREA = 'MIN_AREA'  
+    INPUT_VECTOR = 'INPUT_VECTOR'  
     OUTPUT_RASTER = 'OUTPUT_RASTER'
 
 
