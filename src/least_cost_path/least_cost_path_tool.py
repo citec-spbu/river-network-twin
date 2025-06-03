@@ -6,7 +6,7 @@ from qgis.core import (
     QgsProcessingOutputVectorLayer,
     QgsProcessing
 )
-from src.least_cost_path.least_cost_path import least_cost_path_analysis
+from src.least_cost_path.least_cost_path import least_cost_path_analysis_tool
 
 class LeastCostPathAnalysisAlgorithm(QgsProcessingAlgorithm):
     """
@@ -90,7 +90,7 @@ class LeastCostPathAnalysisAlgorithm(QgsProcessingAlgorithm):
 
         # Вызываем основную функцию        
         try:
-            lcp_layer, moved_sources_layer = least_cost_path_analysis(
+            lcp_layer, moved_sources_layer = least_cost_path_analysis_tool(
                 points_layer,
                 dem_layer,
                 water_raster_layer,

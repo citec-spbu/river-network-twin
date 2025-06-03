@@ -208,7 +208,36 @@ class CustomDEMPlugin:
         def create_cost_path() -> None:
             dialog.close()
             river(self.project_folder, with_clustering=False)
-            least_cost_path_analysis(self.project_folder)
+            dem_src = f"{self.project_folder}/srtm_output.tif"
+
+            point_layer_path = os.path.join(self.project_folder, "max_height_points.gpkg")
+            point_layer = build_max_height_points(point_layer_path)
+
+            cost_layer = prepare_cost_layer(self.project_folder, dem_src)
+
+
+            # Путь к файлу .tif
+            water_rasterized_tif = f"{self.project_folder}/water_rasterized.tif"
+            water_rasterized = build_water_rasterized(
+                f"{self.project_folder}/merge_result.gpkg",
+                QgsProject.instance().mapLayersByName("water")[0].source(),
+                cost_layer.source(),
+                water_rasterized_tif,
+                0.001,
+            )            
+
+            # Создание и добавление слоя
+            water_rasterized = QgsRasterLayer(water_rasterized_tif, "Water Raster Layer", "gdal")
+            if water_rasterized.isValid():
+                QgsProject.instance().addMapLayer(water_rasterized)
+            else:
+                QMessageBox.warning(None, "Ошибка", "Не удалось загрузить TIFF-растр")
+            
+            least_cost_path_analysis(
+                point_layer,                
+                dem_src,
+                water_rasterized
+            )
             self.add_custom_path_button()
 
         def create_cost_path_with_clustering() -> None:
