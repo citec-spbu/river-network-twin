@@ -149,7 +149,6 @@ def least_cost_path_analysis(project_folder: Path) -> None:
             feature.setGeometry(QgsGeometry.fromPointXY(point))
             sources_provider.addFeature(feature)
 
-            fid_to_node[feat.id()] = node_idx
             terminal_nodes_set.add(node_idx)
 
         terminal_nodes = list(terminal_nodes_set)
@@ -180,6 +179,7 @@ def least_cost_path_analysis(project_folder: Path) -> None:
 
         for i in range(len(terminal_nodes)):
             src_node = terminal_nodes[i]
+        for i in range(len(terminal_nodes)):
             if progress.was_canceled():
                 return
 
@@ -206,7 +206,6 @@ def least_cost_path_analysis(project_folder: Path) -> None:
                 if not node_path:
                     continue
 
-                # Конвертируем узлы в координаты
                 path_pts = []
                 for u in node_path:
                     if u != node_path[0] and u != node_path[-1]:
